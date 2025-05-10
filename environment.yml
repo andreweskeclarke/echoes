@@ -21,4 +21,4 @@ dependencies:
     - pre-commit
     - ruff
     - opencv-python
-    - tqdm 
+    - tqdm

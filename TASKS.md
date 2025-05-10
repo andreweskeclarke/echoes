@@ -81,14 +81,14 @@
   - [ ] GitHub Actions
   - [ ] Automated testing
   - [ ] Code quality checks
-- [ ] Add development tools
-  - [ ] Pre-commit hooks
-  - [ ] Code formatting
-  - [ ] Linting
+- [X] Add development tools
+  - [X] Pre-commit hooks
+  - [X] Code formatting
+  - [X] Linting
 
 ## Future Enhancements
 - [ ] Add support for other video datasets
 - [ ] Implement distributed training
 - [ ] Add model quantization
 - [ ] Create web demo
-- [ ] Add API documentation 
+- [ ] Add API documentation

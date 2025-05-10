@@ -1,0 +1,7 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+Prefer succinct Pythonic code whenever possible.
+Never over comment, prefer fewer comments.

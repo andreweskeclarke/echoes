@@ -1,0 +1,6 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+Always write unit tests, aim for full test coverage within reason. Run unit tests and linters after every change.

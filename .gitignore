@@ -46,6 +46,6 @@ data/
 *.log
 *.pth
 *.pt
-*.ckpt
+*.ckpta
 wandb/
-runs/ 
+runs/
