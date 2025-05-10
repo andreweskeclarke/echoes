@@ -1,4 +1,11 @@
 [tool.ruff]
+# Same as Black
+line-length = 88
+
+# Assume Python 3.11
+target-version = "py311"
+
+[tool.ruff.lint]
 # Enable all rules by default
 select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
 ignore = []
@@ -7,6 +14,17 @@ ignore = []
 fixable = ["ALL"]
 unfixable = []
 
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+known-first-party = ["echoes"]
+
+[tool.ruff.format]
 # Exclude a variety of commonly ignored directories
 exclude = [
     ".bzr",
@@ -30,20 +48,4 @@ exclude = [
     "dist",
     "node_modules",
     "venv",
-]
-
-# Same as Black
-line-length = 88
-
-# Allow unused variables when underscore-prefixed
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
-# Assume Python 3.11
-target-version = "py311"
-
-[tool.ruff.mccabe]
-# Unlike Flake8, default to a complexity level of 10
-max-complexity = 10
-
-[tool.ruff.isort]
-known-first-party = ["echoes"] 
+] 
