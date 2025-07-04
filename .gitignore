@@ -49,3 +49,4 @@ data/
 *.ckpta
 wandb/
 runs/
+.coverage
