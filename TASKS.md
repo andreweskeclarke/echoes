@@ -76,6 +76,30 @@
   - [ ] Performance analysis
   - [ ] Visualization examples
 
+## Azure Cloud Experiment Pipeline
+- [ ] Set up Azure infrastructure
+  - [ ] Create blob storage containers (ucf101-dataset, processed-data, experiment-artifacts)
+  - [ ] Configure service principal for authentication
+  - [ ] Create GPU VM templates (NC/ND series) with auto-shutdown
+- [ ] Data pipeline for cloud
+  - [ ] Upload UCF101 dataset to blob storage
+  - [ ] Implement blob storage data loading in PyTorch Dataset
+  - [ ] Create preprocessing pipeline that caches to blob storage
+- [ ] Experiment orchestration
+  - [ ] Config-driven experiment runner (YAML configs)
+  - [ ] VM provisioning and auto-cleanup scripts
+  - [ ] TensorBoard real-time monitoring via SSH tunnel
+  - [ ] Periodic sync of logs to blob storage during training
+- [ ] MLflow integration
+  - [ ] Set up MLflow tracking server (local or Azure)
+  - [ ] Integrate MLflow logging in training scripts
+  - [ ] Configure artifact storage to blob storage
+  - [ ] Create experiment comparison dashboard
+- [ ] Cost management
+  - [ ] Auto-shutdown policies for VMs
+  - [ ] Budget alerts and monitoring
+  - [ ] Optimize blob storage access patterns
+
 ## Infrastructure
 - [ ] Set up CI/CD
   - [ ] GitHub Actions
