@@ -22,3 +22,6 @@ dependencies:
     - ruff
     - opencv-python
     - tqdm
+    - azure-storage-blob>=12.0.0  # for blob storage
+    - pytest>=7.0.0  # for unit testing
+    - pytest-cov>=4.0.0  # for test coverage
