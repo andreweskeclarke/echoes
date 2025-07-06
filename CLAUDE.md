@@ -23,10 +23,8 @@ conda activate echoes
 - **Run integration tests**: `RUN_INTEGRATION_TESTS=1 pytest tests/test_integration.py`
 
 ### Dataset Preparation
-- **Download UCF101 dataset (local)**: `python scripts/prepare_ucf101.py --data-dir data/ucf101`
-- **Download UCF101 dataset (blob storage)**: `python scripts/prepare_ucf101.py --storage-type blob --connection-string "your_connection_string"`
-- **Use environment variables for Azure**: Set `AZURE_STORAGE_CONNECTION_STRING` environment variable
-- **Validate downloaded dataset**: `python scripts/validate_dataset.py data/ucf101/ucf101`
+- **Download UCF101 dataset**: `python scripts/download_ucf101_full.py /mnt/echoes_data`
+- **Validate downloaded dataset**: `python scripts/validate_dataset.py /mnt/echoes_data/ucf101`
 
 ## Code Style Guidelines
 
@@ -69,10 +67,9 @@ echoes/
 - Baseline comparisons
 
 ### Storage Architecture
-- **Local Storage**: For development and small-scale experiments
-- **Blob Storage**: For production cloud experiments and large datasets
-- **Storage Abstraction**: Unified interface (`DatasetStorage`) works with both backends
-- **Automatic Caching**: Blob storage automatically caches datasets locally for training
+- **Direct Download**: UCF101 dataset downloads directly from source (10 minutes)
+- **Local Storage**: Mounted Azure disk at `/mnt/echoes_data` for dataset storage
+- **Simple Workflow**: Single script handles download, extraction, and validation
 
 ### Development Notes
 - The project is in early stages - most model and experiment code needs to be implemented
