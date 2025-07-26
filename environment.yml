@@ -18,9 +18,11 @@ dependencies:
   - pip
   - pip:
     - wandb>=0.12.0  # for experiment tracking
+    - mlflow>=2.0.0  # for experiment tracking
+    - tensorboard>=2.0.0  # for experiment visualization
     - pre-commit
     - ruff
-    - opencv-python
+    - opencv-python-headless
     - tqdm
     - azure-storage-blob>=12.0.0  # for blob storage
     - pytest>=7.0.0  # for unit testing
