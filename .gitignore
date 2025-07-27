@@ -50,3 +50,7 @@ data/
 wandb/
 runs/
 .coverage
+models/saved/
+
+#mlflow
+mlruns/

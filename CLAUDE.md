@@ -34,6 +34,7 @@ Based on the Cursor rules in `.cursor/rules/`:
 - Always write unit tests with good coverage
 - Run linters after every change
 - **Use logging statements not print()**
+- Always remove trailing whitespace
 
 ## Testing Principles
 - Prefer dependency injection and objects to using mocks in tests
@@ -77,3 +78,11 @@ echoes/
 - Include training time, memory usage, and accuracy metrics
 - Save models and training artifacts to a `models/` directory (add to .gitignore)
 - Use storage abstraction to seamlessly switch between local and cloud storage
+
+# Planning
+
+We use PLAN.md for our planning.
+
+@PLAN.md
+
+@README.md
