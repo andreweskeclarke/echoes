@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+import time
+import mlflow
+import mlflow.pytorch
+from datetime import datetime
+
+from models.simple_models import SimpleRNN, SimpleESN
+from experiments.dataset import UCF101Dataset
+from data.logging_config import setup_logging, get_logger
+
+logger = get_logger(__name__)
+
+
+def count_parameters(model):
+    """Count trainable and total parameters in model"""
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    return {"trainable_params": trainable, "total_params": total}
+
+
+def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001, experiment_name="default"):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    # Parameter counting
+    param_counts = count_parameters(model)
+    
+    # TensorBoard setup
+    run_name = f"{model.__class__.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    writer = SummaryWriter(f'runs/{experiment_name}/{run_name}')
+
+    # Log parameters to MLflow
+    mlflow.log_param("model_type", model.__class__.__name__)
+    mlflow.log_param("learning_rate", lr)
+    mlflow.log_param("num_epochs", num_epochs)
+    mlflow.log_param("device", str(device))
+    mlflow.log_param("train_samples", len(train_loader.dataset))
+    mlflow.log_param("val_samples", len(val_loader.dataset))
+    mlflow.log_param("trainable_params", param_counts["trainable_params"])
+    mlflow.log_param("total_params", param_counts["total_params"])
+
+    # Log model-specific parameters
+    if hasattr(model, 'reservoir_size'):
+        mlflow.log_param("reservoir_size", model.reservoir_size)
+    if hasattr(model, 'rnn'):
+        mlflow.log_param("hidden_size", model.rnn.hidden_size)
+
+    # Log model architecture to TensorBoard
+    writer.add_text("Model/Architecture", str(model))
+    writer.add_text("Model/Parameters", 
+                    f"Trainable: {param_counts['trainable_params']:,}, "
+                    f"Total: {param_counts['total_params']:,}")
+
+    logger.info(f"Training on {device}")
+    logger.info(f"Model: {model.__class__.__name__}")
+    logger.info(f"Trainable parameters: {param_counts['trainable_params']:,}")
+    logger.info(f"Total parameters: {param_counts['total_params']:,}")
+
+    start_time = time.time()
+
+    for epoch in range(num_epochs):
+        # Training
+        model.train()
+        train_loss = 0
+        train_correct = 0
+        train_total = 0
+
+        for batch_idx, (data, target) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}")):
+            data, target = data.to(device), target.to(device)
+
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+            _, predicted = output.max(1)
+            train_total += target.size(0)
+            train_correct += predicted.eq(target).sum().item()
+
+            # Log batch metrics to TensorBoard
+            global_step = epoch * len(train_loader) + batch_idx
+            if batch_idx % 10 == 0:  # Log every 10 batches
+                writer.add_scalar('Loss/Train_Batch', loss.item(), global_step)
+
+        # Validation
+        model.eval()
+        val_loss = 0
+        val_correct = 0
+        val_total = 0
+
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                loss = criterion(output, target)
+
+                val_loss += loss.item()
+                _, predicted = output.max(1)
+                val_total += target.size(0)
+                val_correct += predicted.eq(target).sum().item()
+
+        train_acc = 100. * train_correct / train_total if train_total > 0 else 0.0
+        val_acc = 100. * val_correct / val_total if val_total > 0 else 0.0
+        avg_train_loss = train_loss / len(train_loader) if len(train_loader) > 0 else 0.0
+        avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0.0
+
+        # Log metrics to MLflow (per epoch)
+        mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
+        mlflow.log_metric("train_accuracy", train_acc, step=epoch)
+        mlflow.log_metric("val_loss", avg_val_loss, step=epoch)
+        mlflow.log_metric("val_accuracy", val_acc, step=epoch)
+
+        # Log metrics to TensorBoard
+        writer.add_scalar('Loss/Train', avg_train_loss, epoch)
+        writer.add_scalar('Loss/Validation', avg_val_loss, epoch)
+        writer.add_scalar('Accuracy/Train', train_acc, epoch)
+        writer.add_scalar('Accuracy/Validation', val_acc, epoch)
+
+        logger.info(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.4f}, "
+                   f"Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%")
+
+    total_time = time.time() - start_time
+    logger.info(f"Training completed in {total_time:.2f}s")
+
+    # Log final metrics
+    mlflow.log_metric("final_train_accuracy", train_acc)
+    mlflow.log_metric("final_val_accuracy", val_acc)
+    mlflow.log_metric("training_time_seconds", total_time)
+
+    # Log efficiency metrics
+    params_per_accuracy = param_counts["trainable_params"] / max(val_acc, 0.1)  # Avoid division by zero
+    mlflow.log_metric("params_per_accuracy", params_per_accuracy)
+
+    # Save model
+    mlflow.pytorch.log_model(model, "model")
+
+    # Close TensorBoard writer
+    writer.close()
+
+    return {
+        'final_train_acc': train_acc,
+        'final_val_acc': val_acc,
+        'training_time': total_time,
+        'trainable_params': param_counts["trainable_params"],
+        'total_params': param_counts["total_params"],
+        'params_per_accuracy': params_per_accuracy
+    }
+
+
+def main():
+    setup_logging("INFO")
+
+    # Set MLflow experiment
+    experiment_name = "UCF101_Architecture_Comparison"
+    mlflow.set_experiment(experiment_name)
+
+    # Dataset paths
+    data_dir = "/mnt/echoes_data/ucf101"
+    train_split = f"{data_dir}/splits_01/trainlist01.txt"
+    test_split = f"{data_dir}/splits_01/testlist01.txt"
+
+    # Create datasets (15 classes for more comprehensive testing)
+    num_classes = 15
+    train_dataset = UCF101Dataset(data_dir, train_split, num_classes=num_classes)
+
+    # Use test split for validation
+    val_dataset = UCF101Dataset(data_dir, test_split, num_classes=num_classes)
+    # Take subset for faster validation
+    val_dataset.samples = val_dataset.samples[:150]  # ~10 samples per class
+
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
+
+    logger.info(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
+    logger.info(f"Number of classes: {num_classes}")
+
+    # Model configurations to test
+    input_size = 112 * 112 * 3  # Flattened video frame
+
+    model_configs = [
+        # RNN configurations
+        {"type": "RNN", "hidden_size": 32},
+        {"type": "RNN", "hidden_size": 64},
+        {"type": "RNN", "hidden_size": 128},
+        {"type": "RNN", "hidden_size": 256},
+        
+        # ESN configurations
+        {"type": "ESN", "reservoir_size": 250},
+        {"type": "ESN", "reservoir_size": 500},
+        {"type": "ESN", "reservoir_size": 1000},
+        {"type": "ESN", "reservoir_size": 2000},
+    ]
+
+    results = {}
+    
+    for config in model_configs:
+        # Create model based on configuration
+        if config["type"] == "RNN":
+            model = SimpleRNN(input_size=input_size, 
+                            hidden_size=config["hidden_size"], 
+                            num_classes=num_classes)
+            model_name = f"RNN_h{config['hidden_size']}"
+        else:  # ESN
+            model = SimpleESN(input_size=input_size, 
+                            reservoir_size=config["reservoir_size"], 
+                            num_classes=num_classes)
+            model_name = f"ESN_r{config['reservoir_size']}"
+
+        with mlflow.start_run(run_name=f"{model_name}_experiment"):
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Training {model_name}")
+            logger.info(f"{'='*60}")
+            
+            result = train_model(model, train_loader, val_loader, 
+                               num_epochs=10, lr=0.001, 
+                               experiment_name=experiment_name)
+            results[model_name] = result
+
+    # Print comprehensive comparison
+    logger.info(f"\n{'='*80}")
+    logger.info("COMPREHENSIVE RESULTS COMPARISON")
+    logger.info(f"{'='*80}")
+
+    # Sort by validation accuracy
+    sorted_results = sorted(results.items(), 
+                          key=lambda x: x[1]['final_val_acc'], 
+                          reverse=True)
+
+    logger.info(f"{'Model':<15} {'Val Acc':<8} {'Params':<12} {'Time':<8} {'Efficiency':<12}")
+    logger.info(f"{'-'*70}")
+    
+    for model_name, result in sorted_results:
+        efficiency = result['params_per_accuracy']
+        logger.info(f"{model_name:<15} {result['final_val_acc']:<8.2f} "
+                   f"{result['trainable_params']:<12,} {result['training_time']:<8.1f} "
+                   f"{efficiency:<12.0f}")
+
+    # Best model summary
+    best_model = sorted_results[0]
+    logger.info(f"\nBest Model: {best_model[0]} with {best_model[1]['final_val_acc']:.2f}% validation accuracy")
+    logger.info(f"Training time: {best_model[1]['training_time']:.1f}s")
+    logger.info(f"Parameters: {best_model[1]['trainable_params']:,}")
+
+
+if __name__ == "__main__":
+    main()
