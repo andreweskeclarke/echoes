@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLflow Architecture Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="d3.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏗️ Model Architecture Comparison</h1>
+            <p>Interactive visualization of ESN vs RNN architectures with parameter analysis</p>
+        </header>
+
+        <div class="controls">
+            <div class="filter-group">
+                <label>Filter by Model Type:</label>
+                <select id="modelTypeFilter">
+                    <option value="all">All Models</option>
+                    <option value="SimpleRNN">Simple RNN</option>
+                    <option value="DeepRNN">Deep RNN</option>
+                    <option value="SimpleESN">Simple ESN</option>
+                    <option value="DeepESN">Deep ESN</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label>Sort by:</label>
+                <select id="sortBy">
+                    <option value="val_accuracy">Validation Accuracy</option>
+                    <option value="trainable_params">Trainable Parameters</option>
+                    <option value="total_params">Total Parameters</option>
+                    <option value="training_time">Training Time</option>
+                    <option value="params_per_accuracy">Parameters per Accuracy</option>
+                    <option value="model_complexity">Model Complexity</option>
+                    <option value="memory_efficiency">Memory Efficiency</option>
+                    <option value="training_speed">Training Speed</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="stats-summary" id="statsSummary">
+            <!-- Dynamic stats will be inserted here -->
+        </div>
+
+        <div class="architecture-grid" id="architectureGrid">
+            <!-- Model architecture diagrams will be inserted here -->
+        </div>
+
+        <div class="comparison-view" id="comparisonView" style="display: none;">
+            <h2>Side-by-Side Comparison</h2>
+            <div class="comparison-container">
+                <div class="model-comparison" id="modelA"></div>
+                <div class="model-comparison" id="modelB"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="legend">
+        <h3>Layer Types & Status</h3>
+        
+        <!-- Layer Type Colors -->
+        <div class="legend-section">
+            <h4>Layer Types</h4>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #3b82f6;"></div>
+                <span>Input Layers</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #8b5cf6;"></div>
+                <span>Reservoir Layers</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ef4444;"></div>
+                <span>RNN/LSTM Layers</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f59e0b;"></div>
+                <span>FC/Output Layers</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #10b981;"></div>
+                <span>Connection Layers</span>
+            </div>
+        </div>
+        
+        <!-- Parameter Status -->
+        <div class="legend-section">
+            <h4>Parameter Status</h4>
+            <div class="legend-item">
+                <span>🔥</span>
+                <span>Trainable Parameters</span>
+            </div>
+            <div class="legend-item">
+                <span>❄️</span>
+                <span>Frozen Parameters</span>
+            </div>
+        </div>
+        
+        <div class="legend-note">
+            <small>Block size proportional to parameter count</small>
+        </div>
+    </div>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

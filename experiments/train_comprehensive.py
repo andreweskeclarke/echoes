@@ -13,7 +13,7 @@ import mlflow
 import mlflow.pytorch
 from datetime import datetime
 
-from models.simple_models import SimpleRNN, SimpleESN
+from models.simple_models import SimpleRNN, SimpleESN, DeepRNN, DeepESN
 from experiments.dataset import UCF101Dataset
 from data.logging_config import setup_logging, get_logger
 
@@ -54,8 +54,12 @@ def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001, experi
     # Log model-specific parameters
     if hasattr(model, 'reservoir_size'):
         mlflow.log_param("reservoir_size", model.reservoir_size)
+    if hasattr(model, 'num_layers'):
+        mlflow.log_param("num_layers", model.num_layers)
     if hasattr(model, 'rnn'):
         mlflow.log_param("hidden_size", model.rnn.hidden_size)
+    if hasattr(model, 'hidden_size'):
+        mlflow.log_param("hidden_size", model.hidden_size)
 
     # Log model architecture to TensorBoard
     writer.add_text("Model/Architecture", str(model))
@@ -174,35 +178,55 @@ def main():
     test_split = f"{data_dir}/splits_01/testlist01.txt"
 
     # Create datasets (15 classes for more comprehensive testing)
-    num_classes = 15
+    num_classes = 25  # out of 101
     train_dataset = UCF101Dataset(data_dir, train_split, num_classes=num_classes)
 
-    # Use test split for validation
-    val_dataset = UCF101Dataset(data_dir, test_split, num_classes=num_classes)
+    # Use test split for validation with SAME classes as training
+    val_dataset = UCF101Dataset(data_dir, test_split, num_classes=num_classes, 
+                               class_to_idx=train_dataset.class_to_idx)
     # Take subset for faster validation
-    val_dataset.samples = val_dataset.samples[:150]  # ~10 samples per class
+    # val_dataset.samples = val_dataset.samples[:150]  # ~10 samples per class
 
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
 
     logger.info(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
     logger.info(f"Number of classes: {num_classes}")
+    
+    # Log class distribution
+    logger.info("Classes used:")
+    for class_name, idx in train_dataset.class_to_idx.items():
+        train_count = sum(1 for _, label in train_dataset.samples if label == idx)
+        val_count = sum(1 for _, label in val_dataset.samples if label == idx)
+        logger.info(f"  {idx}: {class_name} - Train: {train_count}, Val: {val_count}")
 
     # Model configurations to test
     input_size = 112 * 112 * 3  # Flattened video frame
 
     model_configs = [
-        # RNN configurations
-        {"type": "RNN", "hidden_size": 32},
-        {"type": "RNN", "hidden_size": 64},
-        {"type": "RNN", "hidden_size": 128},
-        {"type": "RNN", "hidden_size": 256},
+        # # Simple RNN configurations
+        # {"type": "RNN", "hidden_size": 32, "num_layers": 1},
+        # {"type": "RNN", "hidden_size": 64, "num_layers": 1},
+        # {"type": "RNN", "hidden_size": 128, "num_layers": 1},
+        # {"type": "RNN", "hidden_size": 256, "num_layers": 1},
+        # 
+        # # Deep RNN configurations
+        # {"type": "DeepRNN", "hidden_size": 64, "num_layers": 2},
+        # {"type": "DeepRNN", "hidden_size": 64, "num_layers": 3},
+        # {"type": "DeepRNN", "hidden_size": 128, "num_layers": 2},
+        # {"type": "DeepRNN", "hidden_size": 128, "num_layers": 3},
         
-        # ESN configurations
+        # Simple ESN configurations
         {"type": "ESN", "reservoir_size": 250},
         {"type": "ESN", "reservoir_size": 500},
         {"type": "ESN", "reservoir_size": 1000},
         {"type": "ESN", "reservoir_size": 2000},
+        
+        # Deep ESN configurations
+        {"type": "DeepESN", "reservoir_size": 500, "num_layers": 2},
+        {"type": "DeepESN", "reservoir_size": 500, "num_layers": 3},
+        {"type": "DeepESN", "reservoir_size": 1000, "num_layers": 2},
+        {"type": "DeepESN", "reservoir_size": 1000, "num_layers": 3},
     ]
 
     results = {}
@@ -212,13 +236,26 @@ def main():
         if config["type"] == "RNN":
             model = SimpleRNN(input_size=input_size, 
                             hidden_size=config["hidden_size"], 
-                            num_classes=num_classes)
-            model_name = f"RNN_h{config['hidden_size']}"
-        else:  # ESN
+                            num_classes=num_classes,
+                            num_layers=config["num_layers"])
+            model_name = f"RNN_h{config['hidden_size']}_L{config['num_layers']}"
+        elif config["type"] == "DeepRNN":
+            model = DeepRNN(input_size=input_size, 
+                          hidden_size=config["hidden_size"], 
+                          num_layers=config["num_layers"],
+                          num_classes=num_classes)
+            model_name = f"DeepRNN_h{config['hidden_size']}_L{config['num_layers']}"
+        elif config["type"] == "ESN":
             model = SimpleESN(input_size=input_size, 
                             reservoir_size=config["reservoir_size"], 
                             num_classes=num_classes)
             model_name = f"ESN_r{config['reservoir_size']}"
+        else:  # DeepESN
+            model = DeepESN(input_size=input_size, 
+                          reservoir_size=config["reservoir_size"], 
+                          num_layers=config["num_layers"],
+                          num_classes=num_classes)
+            model_name = f"DeepESN_r{config['reservoir_size']}_L{config['num_layers']}"
 
         with mlflow.start_run(run_name=f"{model_name}_experiment"):
             logger.info(f"\n{'='*60}")
