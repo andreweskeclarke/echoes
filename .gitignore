@@ -54,3 +54,5 @@ models/saved/
 
 #mlflow
 mlruns/
+
+.playwright-mcp/
