@@ -81,8 +81,6 @@ echoes/
 
 # Planning
 
-We use PLAN.md for our planning.
-
-@PLAN.md
+We use Linear for task tracking and planning: https://linear.app/aclarke/team/ACL/active
 
 @README.md
