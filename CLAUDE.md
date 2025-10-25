@@ -12,6 +12,23 @@ conda env create -f environment.yml
 conda activate echoes
 ```
 
+## Task Workflow
+
+When working on any task, follow this workflow:
+
+1. **Track on Linear**: Ensure the task is tracked in Linear (https://linear.app/aclarke/team/ACL/active)
+2. **Mark In Progress**: Move the task to "in progress" in Linear
+3. **Read Related Docs**: Review relevant documentation in `docs/` to understand context and requirements
+4. **Complete Task**: Implement the task
+5. **Run Checks**: Execute all quality checks:
+   - `ruff check --fix .` (auto-fix linting issues)
+   - `ruff format .` (format code)
+   - `pre-commit run --all-files` (run pre-commit hooks)
+   - `pytest tests/` (run unit tests)
+6. **Review Documentation**: Check if docs in `docs/` need updating to reflect changes
+7. **Commit and Push**: Commit changes and push to main
+8. **Close Linear Task**: Move the Linear task to "Done"
+
 ## Development Commands
 
 ### Code Quality and Testing
@@ -28,13 +45,39 @@ conda activate echoes
 
 ## Code Style Guidelines
 
-Based on the Cursor rules in `.cursor/rules/`:
-- Use succinct Pythonic code
-- Minimal comments - prefer self-documenting code
+### Self-Documenting Code is Mandatory
+
+**Comments should be rare and only for unusual code.** Code clarity should come from:
+- Descriptive variable and function names
+- Clear logic flow and structure
+- Type hints (especially return types)
+- Docstrings for public APIs (functions, classes, modules) - explain *why*, not *what*
+
+Bad:
+```python
+# Increment counter
+c += 1  # Loop counter
+
+# Check if valid
+if x > 0:
+    pass
+```
+
+Good:
+```python
+processed_count += 1
+
+if input_value > 0:
+    validate_threshold()
+```
+
+### Other Guidelines
+
+- Use succinct, idiomatic Pythonic code
 - Always write unit tests with good coverage
 - Run linters after every change
-- **Use logging statements not print()**
-- Always remove trailing whitespace
+- **Use logging statements, never print()**
+- Remove all trailing whitespace
 
 ## Testing Principles
 - Prefer dependency injection and objects to using mocks in tests
@@ -43,14 +86,20 @@ Based on the Cursor rules in `.cursor/rules/`:
 
 This is a PyTorch-based research project comparing Echo State Networks (ESNs) with traditional RNNs for video classification using the UCF101 dataset.
 
-### Planned Directory Structure
+### Directory Structure
 ```
 echoes/
-├── data/               # UCF101 dataset and preprocessing
-├── models/            # Model implementations (ESN, RNN, LSTM, GRU)
-├── experiments/       # Training and evaluation scripts
-├── notebooks/         # Analysis and visualization notebooks
-└── scripts/          # Utility scripts (dataset prep, etc.)
+├── data/               # Data loading and preprocessing
+├── models/             # Model implementations (ESN, RNN, LSTM, GRU)
+├── experiments/        # Training and evaluation scripts
+├── scripts/            # Utility scripts (dataset prep, deployment, etc.)
+├── dashboard/          # Web dashboard for model visualization
+├── docs/               # MkDocs documentation
+├── tests/              # Unit and integration tests
+├── logs/               # Training logs (symlink to /mnt/echoes_data/logs)
+├── mlruns/             # MLflow experiment tracking (symlink to /mnt/echoes_data/mlruns)
+├── tfruns/             # TensorBoard runs (symlink to /mnt/echoes_data/tfruns)
+└── site/               # Generated MkDocs site (ignored in git)
 ```
 
 ### Key Technologies
