@@ -27,7 +27,7 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-NGINX_DASHBOARD_DIR = "/var/www/dashboard"
+NGINX_DASHBOARD_DIR = "/var/www/dashboard/current"
 SOURCE_DIR = Path(__file__).parent / "src"
 EXPERIMENT_NAME = "UCF101_Architecture_Comparison"
 

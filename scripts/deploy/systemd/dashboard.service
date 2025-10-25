@@ -1,0 +1,17 @@
+[Unit]
+Description=Echoes Dashboard
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=aclarke
+WorkingDirectory=/var/www/dashboard/current
+ExecStart=/usr/bin/python3 -m http.server 8000
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

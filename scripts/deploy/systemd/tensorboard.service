@@ -1,0 +1,17 @@
+[Unit]
+Description=TensorBoard
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=aclarke
+WorkingDirectory=/home/aclarke/echoes
+ExecStart=/home/aclarke/miniconda/envs/echoes/bin/tensorboard --logdir=/mnt/echoes_data/tfruns --host=0.0.0.0 --port=6006
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
