@@ -56,3 +56,11 @@ models/saved/
 mlruns/
 
 .playwright-mcp/
+
+# Azure configuration (contains resource names)
+.azure-config.json
+
+# symlinked to /mnt/echoes_data/
+logs
+mlruns
+tfruns

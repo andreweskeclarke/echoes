@@ -39,7 +39,7 @@ def train_model(model, train_loader, val_loader, num_epochs=10, lr=0.001, experi
     
     # TensorBoard setup
     run_name = f"{model.__class__.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    writer = SummaryWriter(f'runs/{experiment_name}/{run_name}')
+    writer = SummaryWriter(f'tfruns/{experiment_name}/{run_name}')
 
     # Log parameters to MLflow
     mlflow.log_param("model_type", model.__class__.__name__)

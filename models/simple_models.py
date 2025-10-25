@@ -34,7 +34,7 @@ class SimpleESN(nn.Module):
             self.W_res *= spectral_radius / torch.max(eigenvals)
 
         # Only train the readout layer
-        self.readout = nn.Linear(reservoir_size, num_classes)
+        self.W_readout = nn.Linear(reservoir_size, num_classes)
 
     def forward(self, x):
         batch_size, seq_len, _ = x.shape
@@ -45,7 +45,7 @@ class SimpleESN(nn.Module):
             u = self.W_in(x[:, t, :])
             h = torch.tanh(u + h @ self.W_res)
 
-        return self.readout(h)
+        return self.W_readout(h)
 
 
 class DeepESN(nn.Module):
