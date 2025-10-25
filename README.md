@@ -105,10 +105,6 @@ python scripts/azure_gpu_runner.py experiments/test_azure.py --vm-size Standard_
 
 The Azure runner automatically handles VM lifecycle, environment setup, data transfer, and result collection.
 
-## Contributing
-
-Feel free to open issues or submit pull requests for any improvements or bug fixes.
-
 ## License
 
 MIT License

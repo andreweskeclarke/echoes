@@ -1,0 +1,58 @@
+site_name: Echoes - ESN Research
+site_description: Exploring Echo State Networks for Video Classification
+site_url: https://docs.lonel.ai/
+repo_url: https://github.com/aclarke/echoes
+repo_name: aclarke/echoes
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/lightbulb-outline
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/lightbulb
+        name: Switch to light mode
+
+plugins:
+  - search
+  - privacy
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quick-start.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Models: architecture/models.md
+    - Infrastructure: architecture/infrastructure.md
+  - Guides:
+    - Running Experiments: guides/experiments.md
+    - Deployment: guides/deployment.md
