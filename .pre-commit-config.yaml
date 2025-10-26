@@ -7,9 +7,11 @@ repos:
     -   id: check-yaml
     -   id: check-added-large-files
 
--   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.3.0
+-   repo: local
     hooks:
-    -   id: ruff
-        args: [--fix]
-    -   id: ruff-format
+    -   id: make-check
+        name: make check
+        entry: make check
+        language: system
+        pass_filenames: false
+        stages: [commit]
