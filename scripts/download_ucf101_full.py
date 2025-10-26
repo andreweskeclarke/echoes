@@ -25,7 +25,8 @@ def check_disk_space(path: Path, required_gb: float) -> bool:
 
         if free_gb < required_gb:
             logging.error(
-                f"Insufficient disk space! Need {required_gb:.1f}GB, have {free_gb:.1f}GB"
+                f"Insufficient disk space! Need {required_gb:.1f}GB, "
+                f"have {free_gb:.1f}GB"
             )
             return False
 
@@ -137,7 +138,8 @@ def count_videos(ucf101_dir: Path) -> int:
         return 0
 
 
-def main():
+def main():  # noqa: PLR0912, PLR0915
+    # TODO: Break down main() into smaller functions for clarity
     parser = argparse.ArgumentParser(
         description="Download and extract complete UCF101 dataset"
     )
@@ -239,7 +241,8 @@ def main():
     logging.info(f"Total videos found: {video_count}")
     logging.info("Expected videos: ~13,320")
 
-    if video_count < 10000:
+    min_expected_videos = 10000
+    if video_count < min_expected_videos:
         logging.warning("Video count seems low - extraction may be incomplete")
 
     # Clean up archives to save space

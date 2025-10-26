@@ -21,7 +21,6 @@ try:
     import mlflow
     import pandas as pd
     import torch
-    from torch import nn
 except ImportError:
     print("Error: MLflow not available. Run: conda activate echoes")
     sys.exit(1)
@@ -164,21 +163,27 @@ class ModelArchitectureAnalyzer:
                 "params": input_params,
                 "trainable": False,
                 "type": "input",
-                "description": f"Input → Reservoir: {self.input_size:,} × {reservoir_size:,}",
+                "description": (
+                    f"Input → Reservoir: {self.input_size:,} x {reservoir_size:,}"
+                ),
             },
             {
                 "name": "Reservoir",
                 "params": reservoir_params,
                 "trainable": False,
                 "type": "reservoir",
-                "description": f"Fixed random weights: {reservoir_size:,} × {reservoir_size:,}",
+                "description": (
+                    f"Fixed random weights: {reservoir_size:,} x {reservoir_size:,}"
+                ),
             },
             {
                 "name": "Readout Layer",
                 "params": readout_params,
                 "trainable": True,
                 "type": "output",
-                "description": f"Only trainable part: {reservoir_size:,} → {self.num_classes}",
+                "description": (
+                    f"Only trainable part: {reservoir_size:,} → {self.num_classes}"
+                ),
             },
         ]
 
@@ -210,14 +215,19 @@ class ModelArchitectureAnalyzer:
                 "params": input_params,
                 "trainable": False,
                 "type": "input",
-                "description": f"Input → First reservoir: {self.input_size:,} × {reservoir_size:,}",
+                "description": (
+                    f"Input → First reservoir: {self.input_size:,} x {reservoir_size:,}"
+                ),
             },
             {
                 "name": f"Multi-Reservoir ({num_layers} layers)",
                 "params": total_reservoir_params,
                 "trainable": False,
                 "type": "reservoir",
-                "description": f"Stacked reservoirs: {num_layers} × ({reservoir_size:,} × {reservoir_size:,})",
+                "description": (
+                    f"Stacked reservoirs: {num_layers} x "
+                    f"({reservoir_size:,} x {reservoir_size:,})"
+                ),
             },
             {
                 "name": "Layer Connections",
@@ -231,7 +241,10 @@ class ModelArchitectureAnalyzer:
                 "params": readout_params,
                 "trainable": True,
                 "type": "output",
-                "description": f"Concatenated readout: {reservoir_size * num_layers:,} → {self.num_classes}",
+                "description": (
+                    f"Concatenated readout: {reservoir_size * num_layers:,} → "
+                    f"{self.num_classes}"
+                ),
             },
         ]
 
@@ -275,14 +288,15 @@ class PyTorchModelAnalyzer:
             logger.warning(f"Could not find model file for run {run_id}: {e}")
             return None
 
-    def analyze_pytorch_model(self, model_path: Path) -> list[dict[str, Any]]:
+    def analyze_pytorch_model(self, model_path: Path) -> list[dict[str, Any]]:  # noqa: PLR0912, PLR0915
         """Extract layer information from a saved PyTorch model"""
+        # TODO: Refactor this method - too many branches and statements
         try:
             # Load the model
             device = torch.device("cpu")
             model = torch.load(model_path, map_location=device, weights_only=False)
 
-            # Try to get state_dict if it's a full model, otherwise assume it's already a state_dict
+            # Try to get state_dict from model, otherwise assume it's already one
             if hasattr(model, "state_dict"):
                 state_dict = model.state_dict()
             elif hasattr(model, "items"):
@@ -301,11 +315,12 @@ class PyTorchModelAnalyzer:
 
             layers = []
             layer_groups = {}
+            min_parts = 2
 
             # Group parameters by layer prefix
             for name, tensor in state_dict.items():
                 parts = name.split(".")
-                if len(parts) >= 2:
+                if len(parts) >= min_parts:
                     layer_name = ".".join(parts[:-1])  # Remove 'weight' or 'bias'
                     if layer_name not in layer_groups:
                         layer_groups[layer_name] = []
@@ -409,7 +424,10 @@ class PyTorchModelAnalyzer:
                     "params": reservoir_params,
                     "trainable": False,
                     "type": "reservoir",
-                    "description": f"Hidden reservoir: {reservoir_size:,} × {reservoir_size:,} (frozen)",
+                    "description": (
+                        f"Hidden reservoir: {reservoir_size:,} x "
+                        f"{reservoir_size:,} (frozen)"
+                    ),
                 }
 
                 # Insert reservoir layer after W_in
