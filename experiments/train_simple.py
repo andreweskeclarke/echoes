@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).parent.parent))
 
 import torch
@@ -19,7 +20,7 @@ logger = get_logger(__name__)
 
 
 def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -34,9 +35,9 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     mlflow.log_param("val_samples", len(val_loader.dataset))
 
     # Log model-specific parameters
-    if hasattr(model, 'reservoir_size'):
+    if hasattr(model, "reservoir_size"):
         mlflow.log_param("reservoir_size", model.reservoir_size)
-    if hasattr(model, 'rnn'):
+    if hasattr(model, "rnn"):
         mlflow.log_param("hidden_size", model.rnn.hidden_size)
 
     logger.info(f"Training on {device}")
@@ -51,7 +52,9 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
         train_correct = 0
         train_total = 0
 
-        for batch_idx, (data, target) in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}")):
+        for batch_idx, (data, target) in enumerate(
+            tqdm(train_loader, desc=f"Epoch {epoch + 1}")
+        ):
             data, target = data.to(device), target.to(device)
 
             optimizer.zero_grad()
@@ -82,16 +85,18 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
                 val_total += target.size(0)
                 val_correct += predicted.eq(target).sum().item()
 
-        train_acc = 100. * train_correct / train_total
-        val_acc = 100. * val_correct / val_total
+        train_acc = 100.0 * train_correct / train_total
+        val_acc = 100.0 * val_correct / val_total
 
         # Log metrics per epoch
-        mlflow.log_metric("train_loss", train_loss/len(train_loader), step=epoch)
+        mlflow.log_metric("train_loss", train_loss / len(train_loader), step=epoch)
         mlflow.log_metric("train_accuracy", train_acc, step=epoch)
         mlflow.log_metric("val_accuracy", val_acc, step=epoch)
 
-        logger.info(f"Epoch {epoch+1}: Train Loss: {train_loss/len(train_loader):.4f}, "
-                   f"Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%")
+        logger.info(
+            f"Epoch {epoch + 1}: Train Loss: {train_loss / len(train_loader):.4f}, "
+            f"Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%"
+        )
 
     total_time = time.time() - start_time
     logger.info(f"Training completed in {total_time:.2f}s")
@@ -105,9 +110,9 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     mlflow.pytorch.log_model(model, "model")
 
     return {
-        'final_train_acc': train_acc,
-        'final_val_acc': val_acc,
-        'training_time': total_time
+        "final_train_acc": train_acc,
+        "final_val_acc": val_acc,
+        "training_time": total_time,
     }
 
 
@@ -126,7 +131,9 @@ def main():
     train_dataset = UCF101Dataset(data_dir, train_split)
 
     # For validation, reuse some training data (quick test)
-    val_dataset = UCF101Dataset(data_dir, train_split, class_to_idx=train_dataset.class_to_idx)
+    val_dataset = UCF101Dataset(
+        data_dir, train_split, class_to_idx=train_dataset.class_to_idx
+    )
     # Take only subset for validation
     val_dataset.samples = val_dataset.samples[:100]
 
@@ -138,24 +145,26 @@ def main():
     # Train models
     num_classes = len(train_dataset.class_to_idx)
     models = [
-        SimpleRNN(input_size=112*112*3, hidden_size=64, num_classes=num_classes),
-        SimpleESN(input_size=112*112*3, reservoir_size=500, num_classes=num_classes)
+        SimpleRNN(input_size=112 * 112 * 3, hidden_size=64, num_classes=num_classes),
+        SimpleESN(
+            input_size=112 * 112 * 3, reservoir_size=500, num_classes=num_classes
+        ),
     ]
 
     results = {}
     for model in models:
         with mlflow.start_run(run_name=f"{model.__class__.__name__}_experiment"):
-            logger.info(f"\n{'='*50}")
+            logger.info(f"\n{'=' * 50}")
             logger.info(f"Training {model.__class__.__name__}")
-            logger.info(f"{'='*50}")
-            
+            logger.info(f"{'=' * 50}")
+
             result = train_model(model, train_loader, val_loader, num_epochs=3)
             results[model.__class__.__name__] = result
 
     # Print comparison
-    logger.info(f"\n{'='*50}")
+    logger.info(f"\n{'=' * 50}")
     logger.info("FINAL RESULTS")
-    logger.info(f"{'='*50}")
+    logger.info(f"{'=' * 50}")
 
     for model_name, result in results.items():
         logger.info(f"{model_name}:")

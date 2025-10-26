@@ -6,12 +6,14 @@ from pathlib import Path
 
 
 class UCF101Dataset(Dataset):
-    def __init__(self, data_dir, split_file, max_frames=16, frame_size=112, class_to_idx=None):
+    def __init__(
+        self, data_dir, split_file, max_frames=16, frame_size=112, class_to_idx=None
+    ):
         self.data_dir = Path(data_dir)
         self.max_frames = max_frames
         self.frame_size = frame_size
         self.samples = []
-        
+
         # Load split file
         with open(split_file) as f:
             lines = f.readlines()
@@ -23,18 +25,18 @@ class UCF101Dataset(Dataset):
 
             # First pass: collect all unique class names in order of appearance
             for line in lines:
-                if ' ' in line:  # Training split format
-                    path, _ = line.strip().split(' ')
-                    class_name = path.split('/')[0]
+                if " " in line:  # Training split format
+                    path, _ = line.strip().split(" ")
+                    class_name = path.split("/")[0]
                     if class_name not in class_names_seen:
                         class_names_seen.add(class_name)
                         self.class_to_idx[class_name] = len(self.class_to_idx)
 
             # Second pass: collect samples for all classes
             for line in lines:
-                if ' ' in line:
-                    path, _ = line.strip().split(' ')
-                    class_name = path.split('/')[0]
+                if " " in line:
+                    path, _ = line.strip().split(" ")
+                    class_name = path.split("/")[0]
                     if class_name in self.class_to_idx:
                         label = self.class_to_idx[class_name]
                         self.samples.append((path, label))
@@ -43,15 +45,15 @@ class UCF101Dataset(Dataset):
             self.class_to_idx = class_to_idx
 
             for line in lines:
-                if ' ' in line:  # Training split format
-                    path, _ = line.strip().split(' ')
-                    class_name = path.split('/')[0]
+                if " " in line:  # Training split format
+                    path, _ = line.strip().split(" ")
+                    class_name = path.split("/")[0]
                     if class_name in self.class_to_idx:
                         label = self.class_to_idx[class_name]
                         self.samples.append((path, label))
                 elif line.strip():  # Test split format (no label)
                     path = line.strip()
-                    class_name = path.split('/')[0]
+                    class_name = path.split("/")[0]
                     if class_name in self.class_to_idx:
                         label = self.class_to_idx[class_name]
                         self.samples.append((path, label))
@@ -84,9 +86,13 @@ class UCF101Dataset(Dataset):
         if len(frames) < self.max_frames:
             # Repeat last frame
             while len(frames) < self.max_frames:
-                frames.append(frames[-1] if frames else np.zeros((self.frame_size, self.frame_size, 3)))
+                frames.append(
+                    frames[-1]
+                    if frames
+                    else np.zeros((self.frame_size, self.frame_size, 3))
+                )
         else:
-            frames = frames[:self.max_frames]
+            frames = frames[: self.max_frames]
 
         # Convert to tensor (T, H, W, C) -> (T, C*H*W)
         frames = np.stack(frames)
