@@ -177,12 +177,11 @@ def main():
     train_split = f"{data_dir}/splits_01/trainlist01.txt"
     test_split = f"{data_dir}/splits_01/testlist01.txt"
 
-    # Create datasets (15 classes for more comprehensive testing)
-    num_classes = 25  # out of 101
-    train_dataset = UCF101Dataset(data_dir, train_split, num_classes=num_classes)
+    # Create datasets (all 101 classes)
+    train_dataset = UCF101Dataset(data_dir, train_split)
 
     # Use test split for validation with SAME classes as training
-    val_dataset = UCF101Dataset(data_dir, test_split, num_classes=num_classes, 
+    val_dataset = UCF101Dataset(data_dir, test_split,
                                class_to_idx=train_dataset.class_to_idx)
     # Take subset for faster validation
     # val_dataset.samples = val_dataset.samples[:150]  # ~10 samples per class
@@ -191,7 +190,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
 
     logger.info(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
-    logger.info(f"Number of classes: {num_classes}")
+    logger.info(f"Number of classes: {len(train_dataset.class_to_idx)}")
     
     # Log class distribution
     logger.info("Classes used:")
@@ -202,6 +201,7 @@ def main():
 
     # Model configurations to test
     input_size = 112 * 112 * 3  # Flattened video frame
+    num_classes = len(train_dataset.class_to_idx)
 
     model_configs = [
         # # Simple RNN configurations

@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 class UCF101Dataset(Dataset):
-    def __init__(self, data_dir, split_file, max_frames=16, frame_size=112, num_classes=5, class_to_idx=None):
+    def __init__(self, data_dir, split_file, max_frames=16, frame_size=112, class_to_idx=None):
         self.data_dir = Path(data_dir)
         self.max_frames = max_frames
         self.frame_size = frame_size
@@ -17,23 +17,20 @@ class UCF101Dataset(Dataset):
             lines = f.readlines()
 
         if class_to_idx is None:
-            # Training mode: build class mapping from first num_classes unique class names
+            # Training mode: build class mapping from all unique classes
             self.class_to_idx = {}
             class_names_seen = set()
-            
-            # First pass: collect unique class names in order of appearance
+
+            # First pass: collect all unique class names in order of appearance
             for line in lines:
                 if ' ' in line:  # Training split format
                     path, _ = line.strip().split(' ')
                     class_name = path.split('/')[0]
                     if class_name not in class_names_seen:
                         class_names_seen.add(class_name)
-                        if len(self.class_to_idx) < num_classes:
-                            self.class_to_idx[class_name] = len(self.class_to_idx)
-                        if len(self.class_to_idx) >= num_classes:
-                            break
-            
-            # Second pass: collect samples for selected classes
+                        self.class_to_idx[class_name] = len(self.class_to_idx)
+
+            # Second pass: collect samples for all classes
             for line in lines:
                 if ' ' in line:
                     path, _ = line.strip().split(' ')
@@ -44,7 +41,7 @@ class UCF101Dataset(Dataset):
         else:
             # Validation mode: use provided class mapping
             self.class_to_idx = class_to_idx
-            
+
             for line in lines:
                 if ' ' in line:  # Training split format
                     path, _ = line.strip().split(' ')

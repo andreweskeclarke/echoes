@@ -122,13 +122,13 @@ def main():
     train_split = f"{data_dir}/splits_01/trainlist01.txt"
     test_split = f"{data_dir}/splits_01/testlist01.txt"
 
-    # Create datasets (small subset for quick testing)
-    train_dataset = UCF101Dataset(data_dir, train_split, num_classes=3)
+    # Create datasets
+    train_dataset = UCF101Dataset(data_dir, train_split)
 
     # For validation, reuse some training data (quick test)
-    val_dataset = UCF101Dataset(data_dir, train_split, num_classes=3)
+    val_dataset = UCF101Dataset(data_dir, train_split, class_to_idx=train_dataset.class_to_idx)
     # Take only subset for validation
-    val_dataset.samples = val_dataset.samples[:50]
+    val_dataset.samples = val_dataset.samples[:100]
 
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
@@ -136,9 +136,10 @@ def main():
     logger.info(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
 
     # Train models
+    num_classes = len(train_dataset.class_to_idx)
     models = [
-        SimpleRNN(input_size=112*112*3, hidden_size=64, num_classes=3),
-        SimpleESN(input_size=112*112*3, reservoir_size=500, num_classes=3)
+        SimpleRNN(input_size=112*112*3, hidden_size=64, num_classes=num_classes),
+        SimpleESN(input_size=112*112*3, reservoir_size=500, num_classes=num_classes)
     ]
 
     results = {}
