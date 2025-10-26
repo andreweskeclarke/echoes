@@ -4,17 +4,18 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from tqdm import tqdm
 import time
+
 import mlflow
 import mlflow.pytorch
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from models.simple_models import SimpleRNN, SimpleESN
+from data.logging_config import get_logger, setup_logging
 from experiments.dataset import UCF101Dataset
-from data.logging_config import setup_logging, get_logger
+from models.simple_models import SimpleESN, SimpleRNN
 
 logger = get_logger(__name__)
 

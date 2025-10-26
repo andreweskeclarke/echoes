@@ -1,8 +1,9 @@
-import torch
-from torch.utils.data import Dataset
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
+import torch
+from torch.utils.data import Dataset
 
 
 class UCF101Dataset(Dataset):

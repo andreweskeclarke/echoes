@@ -9,9 +9,7 @@ import logging
 import shutil
 import subprocess
 import sys
-import urllib.request
 from pathlib import Path
-from typing import Tuple
 
 from data.logging_config import setup_logging
 
@@ -26,7 +24,9 @@ def check_disk_space(path: Path, required_gb: float) -> bool:
         logging.info(f"Required disk space: {required_gb:.1f}GB")
 
         if free_gb < required_gb:
-            logging.error(f"Insufficient disk space! Need {required_gb:.1f}GB, have {free_gb:.1f}GB")
+            logging.error(
+                f"Insufficient disk space! Need {required_gb:.1f}GB, have {free_gb:.1f}GB"
+            )
             return False
 
         return True
@@ -37,7 +37,7 @@ def check_disk_space(path: Path, required_gb: float) -> bool:
 
 def check_dependencies() -> bool:
     """Check if required tools are installed."""
-    required_tools = ['unrar', 'unzip', 'wget']
+    required_tools = ["unrar", "unzip", "wget"]
     missing = []
 
     for tool in required_tools:
@@ -60,14 +60,15 @@ def download_file(url: str, output_path: Path, description: str) -> bool:
 
         # Use wget for better progress reporting and SSL handling
         cmd = [
-            'wget',
-            '--no-check-certificate',  # Handle SSL cert issues
-            '--progress=bar:force',
+            "wget",
+            "--no-check-certificate",  # Handle SSL cert issues
+            "--progress=bar:force",
             url,
-            '-O', str(output_path)
+            "-O",
+            str(output_path),
         ]
 
-        result = subprocess.run(cmd, capture_output=False, text=True)
+        result = subprocess.run(cmd, check=False, capture_output=False, text=True)
 
         if result.returncode == 0:
             logging.info(f"Successfully downloaded {description}")
@@ -86,8 +87,10 @@ def extract_rar(rar_path: Path, extract_dir: Path) -> bool:
     try:
         logging.info(f"Extracting {rar_path.name}...")
 
-        cmd = ['unrar', 'x', str(rar_path), str(extract_dir)]
-        result = subprocess.run(cmd, cwd=extract_dir.parent, capture_output=True, text=True)
+        cmd = ["unrar", "x", str(rar_path), str(extract_dir)]
+        result = subprocess.run(
+            cmd, check=False, cwd=extract_dir.parent, capture_output=True, text=True
+        )
 
         if result.returncode == 0:
             logging.info("RAR extraction completed successfully")
@@ -109,8 +112,8 @@ def extract_zip(zip_path: Path, extract_dir: Path) -> bool:
     try:
         logging.info(f"Extracting {zip_path.name}...")
 
-        cmd = ['unzip', str(zip_path), '-d', str(extract_dir)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        cmd = ["unzip", str(zip_path), "-d", str(extract_dir)]
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
         if result.returncode == 0:
             logging.info("ZIP extraction completed successfully")
@@ -135,15 +138,27 @@ def count_videos(ucf101_dir: Path) -> int:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Download and extract complete UCF101 dataset")
+    parser = argparse.ArgumentParser(
+        description="Download and extract complete UCF101 dataset"
+    )
     parser.add_argument("data_dir", type=Path, help="Directory to download dataset to")
-    parser.add_argument("--skip-space-check", action="store_true",
-                       help="Skip disk space check (dangerous!)")
-    parser.add_argument("--required-space-gb", type=float, default=70.0,
-                       help="Required disk space in GB (default: 70)")
-    parser.add_argument("--log-level", default="INFO",
-                       choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                       help="Logging level")
+    parser.add_argument(
+        "--skip-space-check",
+        action="store_true",
+        help="Skip disk space check (dangerous!)",
+    )
+    parser.add_argument(
+        "--required-space-gb",
+        type=float,
+        default=70.0,
+        help="Required disk space in GB (default: 70)",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level",
+    )
 
     args = parser.parse_args()
 
@@ -176,7 +191,9 @@ def main():
 
     # URLs
     video_url = "https://www.crcv.ucf.edu/data/UCF101/UCF101.rar"
-    splits_url = "https://www.crcv.ucf.edu/data/UCF101/UCF101TrainTestSplits-RecognitionTask.zip"
+    splits_url = (
+        "https://www.crcv.ucf.edu/data/UCF101/UCF101TrainTestSplits-RecognitionTask.zip"
+    )
 
     success = True
 
@@ -218,16 +235,16 @@ def main():
 
     # Count videos and report
     video_count = count_videos(ucf101_extracted)
-    logging.info(f"Dataset extraction complete!")
+    logging.info("Dataset extraction complete!")
     logging.info(f"Total videos found: {video_count}")
-    logging.info(f"Expected videos: ~13,320")
+    logging.info("Expected videos: ~13,320")
 
     if video_count < 10000:
         logging.warning("Video count seems low - extraction may be incomplete")
 
     # Clean up archives to save space
     cleanup_choice = input("Delete downloaded archives to save space? (y/N): ").lower()
-    if cleanup_choice == 'y':
+    if cleanup_choice == "y":
         if rar_path.exists():
             rar_path.unlink()
             logging.info("Deleted UCF101.rar")

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate downloaded UCF101 dataset integrity and structure."""
+
 import argparse
 import hashlib
 import sys
@@ -18,16 +19,13 @@ EXPECTED_TRAIN_VIDEOS = 9537
 EXPECTED_TEST_VIDEOS = 3783
 
 # Key directories that should exist
-REQUIRED_DIRS = [
-    "UCF-101",
-    "splits_01"
-]
+REQUIRED_DIRS = ["UCF-101", "splits_01"]
 
 # Key annotation files that should exist
 REQUIRED_ANNOTATION_FILES = [
     "splits_01/trainlist01.txt",
     "splits_01/testlist01.txt",
-    "splits_01/classInd.txt"
+    "splits_01/classInd.txt",
 ]
 
 
@@ -97,7 +95,9 @@ def validate_class_counts(dataset_path: Path) -> list[str]:
     # Check for empty classes
     empty_classes = [cls for cls, count in video_counts.items() if count == 0]
     if empty_classes:
-        issues.append(f"Found {len(empty_classes)} empty classes: {empty_classes[:5]}...")
+        issues.append(
+            f"Found {len(empty_classes)} empty classes: {empty_classes[:5]}..."
+        )
 
     return issues
 
@@ -232,8 +232,7 @@ def main():
 
     # Setup logging
     setup_logging(
-        level=args.log_level,
-        log_file=Path(args.log_file) if args.log_file else None
+        level=args.log_level, log_file=Path(args.log_file) if args.log_file else None
     )
 
     dataset_path = Path(args.dataset_path)

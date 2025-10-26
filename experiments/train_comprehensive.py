@@ -4,19 +4,20 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+import time
+from datetime import datetime
+
+import mlflow
+import mlflow.pytorch
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-import time
-import mlflow
-import mlflow.pytorch
-from datetime import datetime
 
-from models.simple_models import SimpleRNN, SimpleESN, DeepRNN, DeepESN
+from data.logging_config import get_logger, setup_logging
 from experiments.dataset import UCF101Dataset
-from data.logging_config import setup_logging, get_logger
+from models.simple_models import DeepESN, DeepRNN, SimpleESN, SimpleRNN
 
 logger = get_logger(__name__)
 
