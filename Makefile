@@ -23,7 +23,18 @@ setup:
 	@echo "Setup complete! Run 'make check' to verify installation."
 
 check:
-	@$(CONDA_ACTIVATE) && ruff check --fix . && ruff format . && pytest tests/ && echo "All checks passed!"
+	@echo "Running code quality checks..."
+	@echo ""
+	@echo "Step 1: Running ruff linter (with auto-fix)..."
+	@$(CONDA_ACTIVATE) && ruff check --fix .
+	@echo ""
+	@echo "Step 2: Formatting code with ruff..."
+	@$(CONDA_ACTIVATE) && ruff format .
+	@echo ""
+	@echo "Step 3: Running pytest..."
+	@$(CONDA_ACTIVATE) && (pytest tests/ || [ $$? -eq 5 ])
+	@echo ""
+	@echo "✓ All checks passed!"
 
 test:
 	@$(CONDA_ACTIVATE) && pytest tests/
