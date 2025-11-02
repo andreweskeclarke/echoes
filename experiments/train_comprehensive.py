@@ -32,11 +32,32 @@ class TrainingState:
     train_loader: DataLoader
     val_loader: DataLoader
     writer: SummaryWriter
+    learning_rate: float = 0.001
+    num_epochs: int = 10
     param_counts: dict = None
 
     def __post_init__(self):
         if self.param_counts is None:
             self.param_counts = count_parameters(self.model) if self.model else {}
+
+    def log_model_config(self):
+        mlflow.log_param("model_type", self.model.__class__.__name__)
+        mlflow.log_param("learning_rate", self.learning_rate)
+        mlflow.log_param("num_epochs", self.num_epochs)
+        mlflow.log_param("device", str(self.device))
+        mlflow.log_param("train_samples", len(self.train_loader.dataset))
+        mlflow.log_param("val_samples", len(self.val_loader.dataset))
+        mlflow.log_param("trainable_params", self.param_counts["trainable_params"])
+        mlflow.log_param("total_params", self.param_counts["total_params"])
+
+        if hasattr(self.model, "reservoir_size"):
+            mlflow.log_param("reservoir_size", self.model.reservoir_size)
+        if hasattr(self.model, "num_layers"):
+            mlflow.log_param("num_layers", self.model.num_layers)
+        if hasattr(self.model, "rnn"):
+            mlflow.log_param("hidden_size", self.model.rnn.hidden_size)
+        if hasattr(self.model, "hidden_size"):
+            mlflow.log_param("hidden_size", self.model.hidden_size)
 
 
 def count_parameters(model):
@@ -44,29 +65,6 @@ def count_parameters(model):
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
     return {"trainable_params": trainable, "total_params": total}
-
-
-def log_model_config(model, lr, num_epochs, device, train_loader, val_loader):  # noqa: PLR0913
-    param_counts = count_parameters(model)
-    mlflow.log_param("model_type", model.__class__.__name__)
-    mlflow.log_param("learning_rate", lr)
-    mlflow.log_param("num_epochs", num_epochs)
-    mlflow.log_param("device", str(device))
-    mlflow.log_param("train_samples", len(train_loader.dataset))
-    mlflow.log_param("val_samples", len(val_loader.dataset))
-    mlflow.log_param("trainable_params", param_counts["trainable_params"])
-    mlflow.log_param("total_params", param_counts["total_params"])
-
-    if hasattr(model, "reservoir_size"):
-        mlflow.log_param("reservoir_size", model.reservoir_size)
-    if hasattr(model, "num_layers"):
-        mlflow.log_param("num_layers", model.num_layers)
-    if hasattr(model, "rnn"):
-        mlflow.log_param("hidden_size", model.rnn.hidden_size)
-    if hasattr(model, "hidden_size"):
-        mlflow.log_param("hidden_size", model.hidden_size)
-
-    return param_counts
 
 
 def setup_tensorboard_logging(model, experiment_name, param_counts):
@@ -131,28 +129,37 @@ def validate_comprehensive_epoch(state):
     return val_loss, val_acc
 
 
-def train_model(  # noqa: PLR0913
-    model, train_loader, val_loader, num_epochs=10, lr=0.001, experiment_name="default"
-):
+def train_model(model, train_loader, val_loader, **kwargs):
+    num_epochs = kwargs.get("num_epochs", 10)
+    lr = kwargs.get("lr", 0.001)
+    experiment_name = kwargs.get("experiment_name", "default")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    param_counts = log_model_config(
-        model, lr, num_epochs, device, train_loader, val_loader
-    )
+    param_counts = count_parameters(model)
     writer = setup_tensorboard_logging(model, experiment_name, param_counts)
+
+    state = TrainingState(
+        model=model,
+        device=device,
+        criterion=criterion,
+        optimizer=optimizer,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        writer=writer,
+        learning_rate=lr,
+        num_epochs=num_epochs,
+    )
+
+    state.log_model_config()
 
     logger.info(f"Training on {device}")
     logger.info(f"Model: {model.__class__.__name__}")
-    logger.info(f"Trainable parameters: {param_counts['trainable_params']:,}")
-    logger.info(f"Total parameters: {param_counts['total_params']:,}")
-
-    state = TrainingState(
-        model, device, criterion, optimizer, train_loader, val_loader, writer
-    )
+    logger.info(f"Trainable parameters: {state.param_counts['trainable_params']:,}")
+    logger.info(f"Total parameters: {state.param_counts['total_params']:,}")
     start_time = time.time()
 
     for epoch in range(num_epochs):
@@ -169,10 +176,10 @@ def train_model(  # noqa: PLR0913
         mlflow.log_metric("val_loss", avg_val_loss, step=epoch)
         mlflow.log_metric("val_accuracy", val_acc, step=epoch)
 
-        writer.add_scalar("Loss/Train", avg_train_loss, epoch)
-        writer.add_scalar("Loss/Validation", avg_val_loss, epoch)
-        writer.add_scalar("Accuracy/Train", train_acc, epoch)
-        writer.add_scalar("Accuracy/Validation", val_acc, epoch)
+        state.writer.add_scalar("Loss/Train", avg_train_loss, epoch)
+        state.writer.add_scalar("Loss/Validation", avg_val_loss, epoch)
+        state.writer.add_scalar("Accuracy/Train", train_acc, epoch)
+        state.writer.add_scalar("Accuracy/Validation", val_acc, epoch)
 
         logger.info(
             f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, "
@@ -186,18 +193,18 @@ def train_model(  # noqa: PLR0913
     mlflow.log_metric("final_val_accuracy", val_acc)
     mlflow.log_metric("training_time_seconds", total_time)
 
-    params_per_accuracy = param_counts["trainable_params"] / max(val_acc, 0.1)
+    params_per_accuracy = state.param_counts["trainable_params"] / max(val_acc, 0.1)
     mlflow.log_metric("params_per_accuracy", params_per_accuracy)
 
     mlflow.pytorch.log_model(model, "model")
-    writer.close()
+    state.writer.close()
 
     return {
         "final_train_acc": train_acc,
         "final_val_acc": val_acc,
         "training_time": total_time,
-        "trainable_params": param_counts["trainable_params"],
-        "total_params": param_counts["total_params"],
+        "trainable_params": state.param_counts["trainable_params"],
+        "total_params": state.param_counts["total_params"],
         "params_per_accuracy": params_per_accuracy,
     }
 
