@@ -59,6 +59,18 @@ class TrainingState:
         if hasattr(self.model, "hidden_size"):
             mlflow.log_param("hidden_size", self.model.hidden_size)
 
+    def log_train_epoch(self, epoch, train_loss, train_acc):
+        mlflow.log_metric("train_loss", train_loss, step=epoch)
+        mlflow.log_metric("train_accuracy", train_acc, step=epoch)
+        self.writer.add_scalar("Loss/Train", train_loss, epoch)
+        self.writer.add_scalar("Accuracy/Train", train_acc, epoch)
+
+    def log_validation_epoch(self, epoch, val_loss, val_acc):
+        mlflow.log_metric("val_loss", val_loss, step=epoch)
+        mlflow.log_metric("val_accuracy", val_acc, step=epoch)
+        self.writer.add_scalar("Loss/Validation", val_loss, epoch)
+        self.writer.add_scalar("Accuracy/Validation", val_acc, epoch)
+
 
 def count_parameters(model):
     """Count trainable and total parameters in model"""
@@ -171,15 +183,8 @@ def train_model(model, train_loader, val_loader, **kwargs):
         )
         avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0.0
 
-        mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
-        mlflow.log_metric("train_accuracy", train_acc, step=epoch)
-        mlflow.log_metric("val_loss", avg_val_loss, step=epoch)
-        mlflow.log_metric("val_accuracy", val_acc, step=epoch)
-
-        state.writer.add_scalar("Loss/Train", avg_train_loss, epoch)
-        state.writer.add_scalar("Loss/Validation", avg_val_loss, epoch)
-        state.writer.add_scalar("Accuracy/Train", train_acc, epoch)
-        state.writer.add_scalar("Accuracy/Validation", val_acc, epoch)
+        state.log_train_epoch(epoch, avg_train_loss, train_acc)
+        state.log_validation_epoch(epoch, avg_val_loss, val_acc)
 
         logger.info(
             f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, "
