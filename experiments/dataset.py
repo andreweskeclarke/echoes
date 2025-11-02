@@ -15,49 +15,55 @@ class UCF101Dataset(Dataset):
         self.frame_size = frame_size
         self.samples = []
 
-        # Load split file
         with open(split_file) as f:
             lines = f.readlines()
 
         if class_to_idx is None:
-            # Training mode: build class mapping from all unique classes
-            self.class_to_idx = {}
-            class_names_seen = set()
-
-            # First pass: collect all unique class names in order of appearance
-            for line in lines:
-                if " " in line:  # Training split format
-                    path, _ = line.strip().split(" ")
-                    class_name = path.split("/")[0]
-                    if class_name not in class_names_seen:
-                        class_names_seen.add(class_name)
-                        self.class_to_idx[class_name] = len(self.class_to_idx)
-
-            # Second pass: collect samples for all classes
-            for line in lines:
-                if " " in line:
-                    path, _ = line.strip().split(" ")
-                    class_name = path.split("/")[0]
-                    if class_name in self.class_to_idx:
-                        label = self.class_to_idx[class_name]
-                        self.samples.append((path, label))
+            self._setup_training_mode(lines)
         else:
-            # Validation mode: use provided class mapping
-            self.class_to_idx = class_to_idx
+            self._setup_validation_mode(lines, class_to_idx)
 
-            for line in lines:
-                if " " in line:  # Training split format
-                    path, _ = line.strip().split(" ")
-                    class_name = path.split("/")[0]
-                    if class_name in self.class_to_idx:
-                        label = self.class_to_idx[class_name]
-                        self.samples.append((path, label))
-                elif line.strip():  # Test split format (no label)
-                    path = line.strip()
-                    class_name = path.split("/")[0]
-                    if class_name in self.class_to_idx:
-                        label = self.class_to_idx[class_name]
-                        self.samples.append((path, label))
+    def _setup_training_mode(self, lines):
+        self._build_class_mapping(lines)
+        self._load_labeled_samples(lines)
+
+    def _setup_validation_mode(self, lines, class_to_idx):
+        self.class_to_idx = class_to_idx
+        self._load_mixed_format_samples(lines)
+
+    def _build_class_mapping(self, lines):
+        self.class_to_idx = {}
+        class_names_seen = set()
+
+        for line in lines:
+            if " " in line:
+                path = line.strip().split(" ")[0]
+                class_name = path.split("/")[0]
+                if class_name not in class_names_seen:
+                    class_names_seen.add(class_name)
+                    self.class_to_idx[class_name] = len(self.class_to_idx)
+
+    def _load_labeled_samples(self, lines):
+        for line in lines:
+            if " " in line:
+                path = line.strip().split(" ")[0]
+                class_name = path.split("/")[0]
+                if class_name in self.class_to_idx:
+                    label = self.class_to_idx[class_name]
+                    self.samples.append((path, label))
+
+    def _load_mixed_format_samples(self, lines):
+        for line in lines:
+            if " " in line:
+                path = line.strip().split(" ")[0]
+            else:
+                path = line.strip()
+
+            if path:
+                class_name = path.split("/")[0]
+                if class_name in self.class_to_idx:
+                    label = self.class_to_idx[class_name]
+                    self.samples.append((path, label))
 
     def __len__(self):
         return len(self.samples)

@@ -10,7 +10,8 @@ This script:
 5. Cleans up the VM
 
 Usage:
-    python scripts/azure_gpu_runner.py experiments/train_simple.py --vm-size Standard_NC6s_v3
+    python scripts/azure_gpu_runner.py experiments/train_simple.py \\
+        --vm-size Standard_NC6s_v3
 """
 
 import argparse
@@ -22,6 +23,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -59,26 +61,26 @@ Please create .azure-config.json in the project root with the following format:
         with open(config_path) as f:
             return json.load(f)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in {config_path}: {e}")
+        raise ValueError(f"Invalid JSON in {config_path}: {e}") from e
+
+
+def _default_ssh_key() -> str:
+    return os.path.expanduser("~/.ssh/id_ed25519.pub")
+
+
+@dataclass
+class VMConfig:
+    resource_group: str
+    vm_name: str
+    vm_size: str = "Standard_D2as_v4"
+    location: str = "eastus"
+    auto_destroy_hours: int = 4
+    ssh_key_path: str = field(default_factory=_default_ssh_key)
 
 
 class AzureGPURunner:
-    def __init__(
-        self,
-        resource_group: str,
-        vm_name: str,
-        vm_size: str = "Standard_D2as_v4",
-        location: str = "eastus",
-        ssh_key_path: str | None = None,
-        auto_destroy_hours: int = 4,
-    ):
-        self.resource_group = resource_group
-        self.vm_name = vm_name
-        self.vm_size = vm_size
-        self.location = location
-        default_key = os.path.expanduser("~/.ssh/id_ed25519.pub")
-        self.ssh_key_path = ssh_key_path or default_key
-        self.auto_destroy_hours = auto_destroy_hours
+    def __init__(self, config):
+        self.config = config
         self.vm_ip = None
         self._vm_created = False
 
@@ -88,7 +90,7 @@ class AzureGPURunner:
         """Run Azure CLI command with error handling."""
         logger.info(f"Running: az {' '.join(cmd)}")
         result = subprocess.run(
-            ["az"] + cmd, check=False, capture_output=capture_output, text=True
+            ["az", *cmd], check=False, capture_output=capture_output, text=True
         )
 
         if result.returncode != 0:
@@ -121,13 +123,14 @@ class AzureGPURunner:
     def create_vm(self) -> str:
         """Create Azure GPU VM with auto-destroy tag and return its IP address."""
         logger.info(
-            f"Creating VM {self.vm_name} in resource group {self.resource_group}"
+            f"Creating VM {self.config.vm_name} in resource group "
+            f"{self.config.resource_group}"
         )
 
         # Calculate auto-destroy time (current time + hours in UTC)
         auto_destroy_time = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
-            time.gmtime(time.time() + self.auto_destroy_hours * 3600),
+            time.gmtime(time.time() + self.config.auto_destroy_hours * 3600),
         )
 
         # Create VM with auto-destroy tag
@@ -135,19 +138,19 @@ class AzureGPURunner:
             "vm",
             "create",
             "--resource-group",
-            self.resource_group,
+            self.config.resource_group,
             "--name",
-            self.vm_name,
+            self.config.vm_name,
             "--image",
             "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest",
             "--size",
-            self.vm_size,
+            self.config.vm_size,
             "--admin-username",
             "aclarke",
             "--ssh-key-values",
-            self.ssh_key_path,
+            self.config.ssh_key_path,
             "--location",
-            self.location,
+            self.config.location,
             "--tags",
             f"AutoShutdownTime={auto_destroy_time}",
             "CreatedBy=echoes-gpu-runner",
@@ -180,7 +183,8 @@ class AzureGPURunner:
             else:
                 if i == max_retries - 1:
                     raise RuntimeError(
-                        f"Could not establish SSH connection after {max_retries} attempts"
+                        f"Could not establish SSH connection after {max_retries} "
+                        "attempts"
                     )
                 logger.info(f"SSH attempt {i + 1} failed, retrying in 30s...")
                 time.sleep(30)
@@ -190,15 +194,7 @@ class AzureGPURunner:
     def _setup_vm_auto_shutdown(self):
         """Set up auto-shutdown script on the VM as a backup safety measure."""
         logger.info("Setting up VM auto-shutdown as backup safety...")
-
-        # Create auto-shutdown script that runs after the specified hours
-        shutdown_script = f"""#!/bin/bash
-# Auto-shutdown script created by echoes-gpu-runner
-sleep {self.auto_destroy_hours * 3600}
-sudo shutdown -h now
-"""
-
-        # Note: We'll set this up after SSH is available in setup_environment
+        # Auto-shutdown is configured in setup_environment
 
     def setup_environment(self, data_dir: str):
         """Set up the conda environment and codebase on the VM."""
@@ -222,31 +218,43 @@ sudo shutdown -h now
 
         # Set up auto-shutdown script as backup
         auto_shutdown_script = f"""#!/bin/bash
-echo "Setting up auto-shutdown in {self.auto_destroy_hours} hours..."
-(sleep {self.auto_destroy_hours * 3600} && sudo shutdown -h now) &
+echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
+(sleep {self.config.auto_destroy_hours * 3600} && sudo shutdown -h now) &
 """
 
-        # Install conda and create environment
         setup_commands = [
             f"echo '{auto_shutdown_script}' > ~/auto_shutdown.sh",
             "chmod +x ~/auto_shutdown.sh",
             "nohup ~/auto_shutdown.sh > ~/auto_shutdown.log 2>&1 &",
             "cd ~/echoes",
-            # Create data directories on VM
             f"mkdir -p {data_dir}/logs {data_dir}/mlruns {data_dir}/tfruns",
-            # Remove local directories and create symlinks
             "rm -rf ~/echoes/logs ~/echoes/mlruns ~/echoes/tfruns",
             f"ln -sf {data_dir}/logs ~/echoes/logs",
             f"ln -sf {data_dir}/mlruns ~/echoes/mlruns",
             f"ln -sf {data_dir}/tfruns ~/echoes/tfruns",
-            "wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh",
+            (
+                "wget "
+                "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh "
+                "-O miniconda.sh"
+            ),
             "bash miniconda.sh -b -p $HOME/miniconda",
             "export PATH=$HOME/miniconda/bin:$PATH && conda init bash",
-            # Accept conda Terms of Service for required channels
-            "export PATH=$HOME/miniconda/bin:$PATH && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main",
-            "export PATH=$HOME/miniconda/bin:$PATH && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r",
-            # Use mamba for faster package resolution, fallback to conda
-            "cd ~/echoes && export PATH=$HOME/miniconda/bin:$PATH && (conda install mamba -c conda-forge -y && mamba env create -f environment.yml -y || conda env create -f environment.yml -y)",
+            (
+                "export PATH=$HOME/miniconda/bin:$PATH && "
+                "conda tos accept --override-channels "
+                "--channel https://repo.anaconda.com/pkgs/main"
+            ),
+            (
+                "export PATH=$HOME/miniconda/bin:$PATH && "
+                "conda tos accept --override-channels "
+                "--channel https://repo.anaconda.com/pkgs/r"
+            ),
+            (
+                "cd ~/echoes && export PATH=$HOME/miniconda/bin:$PATH && "
+                "(conda install mamba -c conda-forge -y && "
+                "mamba env create -f environment.yml -y || "
+                "conda env create -f environment.yml -y)"
+            ),
         ]
 
         for cmd in setup_commands:
@@ -257,7 +265,7 @@ echo "Setting up auto-shutdown in {self.auto_destroy_hours} hours..."
         logger.info("Environment setup completed")
 
     def copy_dataset(
-        self, data_dir: str = "/tmp/echoes_data", source_vm_ip: str = None
+        self, data_dir: str = "/tmp/echoes_data", source_vm_ip: str | None = None
     ):
         """Copy UCF101 dataset from source VM."""
         if not source_vm_ip:
@@ -268,9 +276,11 @@ echo "Setting up auto-shutdown in {self.auto_destroy_hours} hours..."
 
         logger.info(f"Copying dataset from {source_vm_ip} to {self.vm_ip}...")
 
+        ssh_opts = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
         copy_commands = [
             f"mkdir -p {data_dir}",
-            f"rsync -avz --progress -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' aclarke@{source_vm_ip}:/mnt/echoes_data/ucf101/ {data_dir}/ucf101/",
+            f"rsync -avz --progress -e '{ssh_opts}' "
+            f"aclarke@{source_vm_ip}:/mnt/echoes_data/ucf101/ {data_dir}/ucf101/",
         ]
 
         for cmd in copy_commands:
@@ -332,43 +342,46 @@ echo "Setting up auto-shutdown in {self.auto_destroy_hours} hours..."
 
         Path(local_results_dir).mkdir(exist_ok=True)
 
-        # Get latest MLflow run ID from remote (MLflow runs are now on mounted disk via symlink)
-        get_latest_run_cmd = "ls -t ~/echoes/mlruns/*/*/meta.yaml 2>/dev/null | head -1 | cut -d'/' -f6 || echo 'no_runs'"
+        get_latest_run_cmd = (
+            "ls -t ~/echoes/mlruns/*/*/meta.yaml 2>/dev/null | head -1 | "
+            "cut -d'/' -f6 || echo 'no_runs'"
+        )
         result = self._run_ssh_command(get_latest_run_cmd)
 
         if result.returncode == 0 and result.stdout.strip() != "no_runs":
             latest_run_id = result.stdout.strip()
-            experiment_id_cmd = "ls -t ~/echoes/mlruns/*/*/meta.yaml 2>/dev/null | head -1 | cut -d'/' -f5 || echo 'no_exp'"
+            experiment_id_cmd = (
+                "ls -t ~/echoes/mlruns/*/*/meta.yaml 2>/dev/null | head -1 | "
+                "cut -d'/' -f5 || echo 'no_exp'"
+            )
             exp_result = self._run_ssh_command(experiment_id_cmd)
 
             if exp_result.returncode == 0 and exp_result.stdout.strip() != "no_exp":
                 experiment_id = exp_result.stdout.strip()
+                rsync_cmd = (
+                    f"rsync -avz aclarke@{self.vm_ip}:~/echoes/mlruns/"
+                    f"{experiment_id}/{latest_run_id}/ "
+                    f"{local_results_dir}/mlruns/{experiment_id}/{latest_run_id}/"
+                )
 
-                # Download only the latest run
-                download_commands = [
-                    f"rsync -avz aclarke@{self.vm_ip}:~/echoes/mlruns/{experiment_id}/{latest_run_id}/ {local_results_dir}/mlruns/{experiment_id}/{latest_run_id}/",
-                ]
-
-                for cmd in download_commands:
-                    try:
-                        subprocess.run(cmd, shell=True, check=True)
-                        logger.info(
-                            f"Downloaded experiment {experiment_id}, run {latest_run_id}"
-                        )
-                    except subprocess.CalledProcessError:
-                        logger.warning(f"Failed to download with command: {cmd}")
+                try:
+                    subprocess.run(rsync_cmd, shell=True, check=True)
+                    logger.info(
+                        f"Downloaded experiment {experiment_id}, run {latest_run_id}"
+                    )
+                except subprocess.CalledProcessError:
+                    logger.warning(f"Failed to download with command: {rsync_cmd}")
             else:
                 logger.warning("Could not determine experiment ID")
         else:
             logger.warning("No MLflow runs found to download")
 
-        # Always try to download logs (small)
         try:
-            subprocess.run(
-                f"rsync -avz aclarke@{self.vm_ip}:~/echoes/logs/ {local_results_dir}/logs/",
-                shell=True,
-                check=True,
+            logs_cmd = (
+                f"rsync -avz aclarke@{self.vm_ip}:~/echoes/logs/ "
+                f"{local_results_dir}/logs/"
             )
+            subprocess.run(logs_cmd, shell=True, check=True)
         except subprocess.CalledProcessError:
             logger.warning("Failed to download logs")
 
@@ -380,7 +393,7 @@ echo "Setting up auto-shutdown in {self.auto_destroy_hours} hours..."
             logger.info("No VM to cleanup")
             return
 
-        logger.info(f"Deleting VM {self.vm_name} (aclarke@{self.vm_ip})")
+        logger.info(f"Deleting VM {self.config.vm_name} (aclarke@{self.vm_ip})")
 
         time.sleep(99999)
 
@@ -388,9 +401,9 @@ echo "Setting up auto-shutdown in {self.auto_destroy_hours} hours..."
             "vm",
             "delete",
             "--resource-group",
-            self.resource_group,
+            self.config.resource_group,
             "--name",
-            self.vm_name,
+            self.config.vm_name,
             "--yes",
         ]
 
@@ -469,7 +482,7 @@ def main():
         logger.error(f"Experiment script not found: {args.experiment_script}")
         sys.exit(1)
 
-    runner = AzureGPURunner(
+    config = VMConfig(
         resource_group=resource_group,
         vm_name=args.vm_name,
         vm_size=args.vm_size,
@@ -477,6 +490,7 @@ def main():
         ssh_key_path=args.ssh_key,
         auto_destroy_hours=args.auto_destroy_hours,
     )
+    runner = AzureGPURunner(config)
 
     with runner.vm_context():
         logger.info(f"VM is ready at {runner.vm_ip}")

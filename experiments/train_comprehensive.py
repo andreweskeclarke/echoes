@@ -22,6 +22,20 @@ from models.simple_models import DeepESN, DeepRNN, SimpleESN, SimpleRNN
 logger = get_logger(__name__)
 
 
+class TrainingState:
+    def __init__(  # noqa: PLR0913
+        self, model, device, criterion, optimizer, train_loader, val_loader, writer
+    ):
+        self.model = model
+        self.device = device
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.writer = writer
+        self.param_counts = count_parameters(model) if model else {}
+
+
 def count_parameters(model):
     """Count trainable and total parameters in model"""
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -29,23 +43,8 @@ def count_parameters(model):
     return {"trainable_params": trainable, "total_params": total}
 
 
-def train_model(
-    model, train_loader, val_loader, num_epochs=10, lr=0.001, experiment_name="default"
-):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
-    # Parameter counting
+def log_model_config(model, lr, num_epochs, device, train_loader, val_loader):  # noqa: PLR0913
     param_counts = count_parameters(model)
-
-    # TensorBoard setup
-    run_name = f"{model.__class__.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    writer = SummaryWriter(f"tfruns/{experiment_name}/{run_name}")
-
-    # Log parameters to MLflow
     mlflow.log_param("model_type", model.__class__.__name__)
     mlflow.log_param("learning_rate", lr)
     mlflow.log_param("num_epochs", num_epochs)
@@ -55,7 +54,6 @@ def train_model(
     mlflow.log_param("trainable_params", param_counts["trainable_params"])
     mlflow.log_param("total_params", param_counts["total_params"])
 
-    # Log model-specific parameters
     if hasattr(model, "reservoir_size"):
         mlflow.log_param("reservoir_size", model.reservoir_size)
     if hasattr(model, "num_layers"):
@@ -65,80 +63,109 @@ def train_model(
     if hasattr(model, "hidden_size"):
         mlflow.log_param("hidden_size", model.hidden_size)
 
-    # Log model architecture to TensorBoard
+    return param_counts
+
+
+def setup_tensorboard_logging(model, experiment_name, param_counts):
+    run_name = f"{model.__class__.__name__}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    writer = SummaryWriter(f"tfruns/{experiment_name}/{run_name}")
     writer.add_text("Model/Architecture", str(model))
     writer.add_text(
         "Model/Parameters",
         f"Trainable: {param_counts['trainable_params']:,}, "
         f"Total: {param_counts['total_params']:,}",
     )
+    return writer
+
+
+def train_comprehensive_epoch(state, epoch):
+    state.model.train()
+    train_loss = 0
+    train_correct = 0
+    train_total = 0
+
+    for batch_idx, (batch_data, batch_target) in enumerate(
+        tqdm(state.train_loader, desc=f"Epoch {epoch + 1}")
+    ):
+        data, target = batch_data.to(state.device), batch_target.to(state.device)
+        state.optimizer.zero_grad()
+        output = state.model(data)
+        loss = state.criterion(output, target)
+        loss.backward()
+        state.optimizer.step()
+
+        train_loss += loss.item()
+        _, predicted = output.max(1)
+        train_total += target.size(0)
+        train_correct += predicted.eq(target).sum().item()
+
+        global_step = epoch * len(state.train_loader) + batch_idx
+        if batch_idx % 10 == 0:
+            state.writer.add_scalar("Loss/Train_Batch", loss.item(), global_step)
+
+    train_acc = 100.0 * train_correct / train_total if train_total > 0 else 0.0
+    return train_loss, train_acc
+
+
+def validate_comprehensive_epoch(state):
+    state.model.eval()
+    val_loss = 0
+    val_correct = 0
+    val_total = 0
+
+    with torch.no_grad():
+        for batch_data, batch_target in state.val_loader:
+            data, target = batch_data.to(state.device), batch_target.to(state.device)
+            output = state.model(data)
+            loss = state.criterion(output, target)
+
+            val_loss += loss.item()
+            _, predicted = output.max(1)
+            val_total += target.size(0)
+            val_correct += predicted.eq(target).sum().item()
+
+    val_acc = 100.0 * val_correct / val_total if val_total > 0 else 0.0
+    return val_loss, val_acc
+
+
+def train_model(  # noqa: PLR0913
+    model, train_loader, val_loader, num_epochs=10, lr=0.001, experiment_name="default"
+):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    param_counts = log_model_config(
+        model, lr, num_epochs, device, train_loader, val_loader
+    )
+    writer = setup_tensorboard_logging(model, experiment_name, param_counts)
 
     logger.info(f"Training on {device}")
     logger.info(f"Model: {model.__class__.__name__}")
     logger.info(f"Trainable parameters: {param_counts['trainable_params']:,}")
     logger.info(f"Total parameters: {param_counts['total_params']:,}")
 
+    state = TrainingState(
+        model, device, criterion, optimizer, train_loader, val_loader, writer
+    )
     start_time = time.time()
 
     for epoch in range(num_epochs):
-        # Training
-        model.train()
-        train_loss = 0
-        train_correct = 0
-        train_total = 0
+        train_loss, train_acc = train_comprehensive_epoch(state, epoch)
+        val_loss, val_acc = validate_comprehensive_epoch(state)
 
-        for batch_idx, (data, target) in enumerate(
-            tqdm(train_loader, desc=f"Epoch {epoch + 1}")
-        ):
-            data, target = data.to(device), target.to(device)
-
-            optimizer.zero_grad()
-            output = model(data)
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
-            _, predicted = output.max(1)
-            train_total += target.size(0)
-            train_correct += predicted.eq(target).sum().item()
-
-            # Log batch metrics to TensorBoard
-            global_step = epoch * len(train_loader) + batch_idx
-            if batch_idx % 10 == 0:  # Log every 10 batches
-                writer.add_scalar("Loss/Train_Batch", loss.item(), global_step)
-
-        # Validation
-        model.eval()
-        val_loss = 0
-        val_correct = 0
-        val_total = 0
-
-        with torch.no_grad():
-            for data, target in val_loader:
-                data, target = data.to(device), target.to(device)
-                output = model(data)
-                loss = criterion(output, target)
-
-                val_loss += loss.item()
-                _, predicted = output.max(1)
-                val_total += target.size(0)
-                val_correct += predicted.eq(target).sum().item()
-
-        train_acc = 100.0 * train_correct / train_total if train_total > 0 else 0.0
-        val_acc = 100.0 * val_correct / val_total if val_total > 0 else 0.0
         avg_train_loss = (
             train_loss / len(train_loader) if len(train_loader) > 0 else 0.0
         )
         avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0.0
 
-        # Log metrics to MLflow (per epoch)
         mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
         mlflow.log_metric("train_accuracy", train_acc, step=epoch)
         mlflow.log_metric("val_loss", avg_val_loss, step=epoch)
         mlflow.log_metric("val_accuracy", val_acc, step=epoch)
 
-        # Log metrics to TensorBoard
         writer.add_scalar("Loss/Train", avg_train_loss, epoch)
         writer.add_scalar("Loss/Validation", avg_val_loss, epoch)
         writer.add_scalar("Accuracy/Train", train_acc, epoch)
@@ -152,21 +179,14 @@ def train_model(
     total_time = time.time() - start_time
     logger.info(f"Training completed in {total_time:.2f}s")
 
-    # Log final metrics
     mlflow.log_metric("final_train_accuracy", train_acc)
     mlflow.log_metric("final_val_accuracy", val_acc)
     mlflow.log_metric("training_time_seconds", total_time)
 
-    # Log efficiency metrics
-    params_per_accuracy = param_counts["trainable_params"] / max(
-        val_acc, 0.1
-    )  # Avoid division by zero
+    params_per_accuracy = param_counts["trainable_params"] / max(val_acc, 0.1)
     mlflow.log_metric("params_per_accuracy", params_per_accuracy)
 
-    # Save model
     mlflow.pytorch.log_model(model, "model")
-
-    # Close TensorBoard writer
     writer.close()
 
     return {
@@ -319,7 +339,8 @@ def main():
     # Best model summary
     best_model = sorted_results[0]
     logger.info(
-        f"\nBest Model: {best_model[0]} with {best_model[1]['final_val_acc']:.2f}% validation accuracy"
+        f"\nBest Model: {best_model[0]} with "
+        f"{best_model[1]['final_val_acc']:.2f}% validation accuracy"
     )
     logger.info(f"Training time: {best_model[1]['training_time']:.1f}s")
     logger.info(f"Parameters: {best_model[1]['trainable_params']:,}")

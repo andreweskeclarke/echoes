@@ -74,19 +74,19 @@ class DeepESN(nn.Module):
 
         # Multiple reservoir layers
         self.reservoirs = nn.ModuleList()
-        for i in range(num_layers):
-            W_res = nn.Parameter(
+        for _ in range(num_layers):
+            w_res = nn.Parameter(
                 torch.randn(reservoir_size, reservoir_size), requires_grad=False
             )
             # Scale by spectral radius
             with torch.no_grad():
-                eigenvals = torch.linalg.eigvals(W_res).real
-                W_res *= spectral_radius / torch.max(eigenvals)
-            self.reservoirs.append(nn.ParameterDict({"W_res": W_res}))
+                eigenvals = torch.linalg.eigvals(w_res).real
+                w_res *= spectral_radius / torch.max(eigenvals)
+            self.reservoirs.append(nn.ParameterDict({"W_res": w_res}))
 
         # Layer-to-layer connections (optional - can be zero for independent layers)
         self.layer_connections = nn.ModuleList()
-        for i in range(num_layers - 1):
+        for _ in range(num_layers - 1):
             layer_conn = nn.Linear(reservoir_size, reservoir_size, bias=False)
             # Freeze layer connections too
             for param in layer_conn.parameters():

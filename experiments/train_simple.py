@@ -20,14 +20,17 @@ from models.simple_models import SimpleESN, SimpleRNN
 logger = get_logger(__name__)
 
 
-def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+class TrainingState:
+    def __init__(self, model, device, criterion, optimizer, train_loader, val_loader):  # noqa: PLR0913
+        self.model = model
+        self.device = device
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.train_loader = train_loader
+        self.val_loader = val_loader
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # Log parameters
+def log_model_params(model, lr, num_epochs, device, train_loader, val_loader):  # noqa: PLR0913
     mlflow.log_param("model_type", model.__class__.__name__)
     mlflow.log_param("learning_rate", lr)
     mlflow.log_param("num_epochs", num_epochs)
@@ -35,61 +38,78 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     mlflow.log_param("train_samples", len(train_loader.dataset))
     mlflow.log_param("val_samples", len(val_loader.dataset))
 
-    # Log model-specific parameters
     if hasattr(model, "reservoir_size"):
         mlflow.log_param("reservoir_size", model.reservoir_size)
     if hasattr(model, "rnn"):
         mlflow.log_param("hidden_size", model.rnn.hidden_size)
 
+
+def train_epoch(state, epoch):
+    state.model.train()
+    train_loss = 0
+    train_correct = 0
+    train_total = 0
+
+    for _batch_idx, (batch_data, batch_target) in enumerate(
+        tqdm(state.train_loader, desc=f"Epoch {epoch + 1}")
+    ):
+        data, target = batch_data.to(state.device), batch_target.to(state.device)
+
+        state.optimizer.zero_grad()
+        output = state.model(data)
+        loss = state.criterion(output, target)
+        loss.backward()
+        state.optimizer.step()
+
+        train_loss += loss.item()
+        _, predicted = output.max(1)
+        train_total += target.size(0)
+        train_correct += predicted.eq(target).sum().item()
+
+    train_acc = 100.0 * train_correct / train_total
+    return train_loss, train_acc
+
+
+def validate_epoch(state):
+    state.model.eval()
+    val_loss = 0
+    val_correct = 0
+    val_total = 0
+
+    with torch.no_grad():
+        for batch_data, batch_target in state.val_loader:
+            data, target = batch_data.to(state.device), batch_target.to(state.device)
+            output = state.model(data)
+            loss = state.criterion(output, target)
+
+            val_loss += loss.item()
+            _, predicted = output.max(1)
+            val_total += target.size(0)
+            val_correct += predicted.eq(target).sum().item()
+
+    val_acc = 100.0 * val_correct / val_total
+    return val_loss, val_acc
+
+
+def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    log_model_params(model, lr, num_epochs, device, train_loader, val_loader)
+
     logger.info(f"Training on {device}")
     logger.info(f"Model: {model.__class__.__name__}")
 
+    state = TrainingState(model, device, criterion, optimizer, train_loader, val_loader)
     start_time = time.time()
 
     for epoch in range(num_epochs):
-        # Training
-        model.train()
-        train_loss = 0
-        train_correct = 0
-        train_total = 0
+        train_loss, train_acc = train_epoch(state, epoch)
+        val_loss, val_acc = validate_epoch(state)
 
-        for batch_idx, (data, target) in enumerate(
-            tqdm(train_loader, desc=f"Epoch {epoch + 1}")
-        ):
-            data, target = data.to(device), target.to(device)
-
-            optimizer.zero_grad()
-            output = model(data)
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item()
-            _, predicted = output.max(1)
-            train_total += target.size(0)
-            train_correct += predicted.eq(target).sum().item()
-
-        # Validation
-        model.eval()
-        val_loss = 0
-        val_correct = 0
-        val_total = 0
-
-        with torch.no_grad():
-            for data, target in val_loader:
-                data, target = data.to(device), target.to(device)
-                output = model(data)
-                loss = criterion(output, target)
-
-                val_loss += loss.item()
-                _, predicted = output.max(1)
-                val_total += target.size(0)
-                val_correct += predicted.eq(target).sum().item()
-
-        train_acc = 100.0 * train_correct / train_total
-        val_acc = 100.0 * val_correct / val_total
-
-        # Log metrics per epoch
         mlflow.log_metric("train_loss", train_loss / len(train_loader), step=epoch)
         mlflow.log_metric("train_accuracy", train_acc, step=epoch)
         mlflow.log_metric("val_accuracy", val_acc, step=epoch)
@@ -102,12 +122,10 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     total_time = time.time() - start_time
     logger.info(f"Training completed in {total_time:.2f}s")
 
-    # Log final metrics
     mlflow.log_metric("final_train_accuracy", train_acc)
     mlflow.log_metric("final_val_accuracy", val_acc)
     mlflow.log_metric("training_time_seconds", total_time)
 
-    # Save model
     mlflow.pytorch.log_model(model, "model")
 
     return {
@@ -126,7 +144,6 @@ def main():
     # Dataset paths
     data_dir = "/mnt/echoes_data/ucf101"
     train_split = f"{data_dir}/splits_01/trainlist01.txt"
-    test_split = f"{data_dir}/splits_01/testlist01.txt"
 
     # Create datasets
     train_dataset = UCF101Dataset(data_dir, train_split)

@@ -28,6 +28,9 @@ REQUIRED_ANNOTATION_FILES = [
     "splits_01/classInd.txt",
 ]
 
+# Tolerance for video count variations
+VIDEO_COUNT_TOLERANCE = 100
+
 
 def validate_directory_structure(dataset_path: Path) -> list[str]:
     """Validate that required directories exist."""
@@ -89,7 +92,7 @@ def validate_class_counts(dataset_path: Path) -> list[str]:
         issues.append(f"Expected {EXPECTED_CLASSES} classes, found {num_classes}")
 
     # Check total number of videos (with tolerance for slight variations)
-    if abs(total_videos - EXPECTED_TOTAL_VIDEOS) > 100:
+    if abs(total_videos - EXPECTED_TOTAL_VIDEOS) > VIDEO_COUNT_TOLERANCE:
         issues.append(f"Expected ~{EXPECTED_TOTAL_VIDEOS} videos, found {total_videos}")
 
     # Check for empty classes

@@ -138,8 +138,8 @@ def count_videos(ucf101_dir: Path) -> int:
         return 0
 
 
-def main():  # noqa: PLR0912, PLR0915
-    # TODO: Break down main() into smaller functions for clarity
+def parse_args():
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="Download and extract complete UCF101 dataset"
     )
@@ -161,8 +161,76 @@ def main():  # noqa: PLR0912, PLR0915
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level",
     )
+    return parser.parse_args()
 
-    args = parser.parse_args()
+
+def download_archives(dataset_dir, video_url, splits_url):
+    """Download video and splits archives."""
+    rar_path = dataset_dir / "UCF101.rar"
+    zip_path = dataset_dir / "UCF101TrainTestSplits.zip"
+
+    if not rar_path.exists():
+        if not download_file(video_url, rar_path, "UCF101 videos (6.5GB)"):
+            return False, rar_path, zip_path
+    else:
+        logging.info("UCF101.rar already exists, skipping download")
+
+    if not zip_path.exists():
+        if not download_file(splits_url, zip_path, "UCF101 splits (111KB)"):
+            return False, rar_path, zip_path
+    else:
+        logging.info("UCF101 splits already exist, skipping download")
+
+    return True, rar_path, zip_path
+
+
+def extract_archives(dataset_dir, rar_path, zip_path):
+    """Extract both archives."""
+    ucf101_extracted = dataset_dir / "UCF-101"
+    if not ucf101_extracted.exists():
+        if not extract_rar(rar_path, dataset_dir):
+            logging.error("RAR extraction failed!")
+            return False, ucf101_extracted, None
+
+    splits_dir = dataset_dir / "splits_01"
+    if not splits_dir.exists():
+        if not extract_zip(zip_path, dataset_dir):
+            logging.error("ZIP extraction failed!")
+            return False, ucf101_extracted, splits_dir
+    else:
+        logging.info("Splits directory already exists, skipping extraction")
+
+    return True, ucf101_extracted, splits_dir
+
+
+def report_and_cleanup(ucf101_extracted, splits_dir, rar_path, zip_path):
+    """Report results and optionally cleanup archives."""
+    video_count = count_videos(ucf101_extracted)
+    logging.info("Dataset extraction complete!")
+    logging.info(f"Total videos found: {video_count}")
+    logging.info("Expected videos: ~13,320")
+
+    min_expected_videos = 10000
+    if video_count < min_expected_videos:
+        logging.warning("Video count seems low - extraction may be incomplete")
+
+    cleanup_choice = input("Delete downloaded archives to save space? (y/N): ").lower()
+    if cleanup_choice == "y":
+        if rar_path.exists():
+            rar_path.unlink()
+            logging.info("Deleted UCF101.rar")
+        if zip_path.exists():
+            zip_path.unlink()
+            logging.info("Deleted splits.zip")
+
+    logging.info("UCF101 dataset download and extraction completed successfully!")
+    logging.info(f"Dataset location: {ucf101_extracted.parent}")
+    logging.info(f"Videos: {ucf101_extracted}")
+    logging.info(f"Splits: {splits_dir}")
+
+
+def main():
+    args = parse_args()
 
     # Setup logging
     log_file = args.data_dir / "download.log"
@@ -188,77 +256,23 @@ def main():  # noqa: PLR0912, PLR0915
         sys.exit(1)
 
     # Download files
-    rar_path = dataset_dir / "UCF101.rar"
-    zip_path = dataset_dir / "UCF101TrainTestSplits.zip"
-
-    # URLs
     video_url = "https://www.crcv.ucf.edu/data/UCF101/UCF101.rar"
     splits_url = (
         "https://www.crcv.ucf.edu/data/UCF101/UCF101TrainTestSplits-RecognitionTask.zip"
     )
 
-    success = True
-
-    # Download video archive (6.5GB)
-    if not rar_path.exists():
-        if not download_file(video_url, rar_path, "UCF101 videos (6.5GB)"):
-            success = False
-    else:
-        logging.info("UCF101.rar already exists, skipping download")
-
-    # Download splits (111KB)
-    if success and not zip_path.exists():
-        if not download_file(splits_url, zip_path, "UCF101 splits (111KB)"):
-            success = False
-    else:
-        logging.info("UCF101 splits already exist, skipping download")
-
+    success, rar_path, zip_path = download_archives(dataset_dir, video_url, splits_url)
     if not success:
         logging.error("Downloads failed!")
         sys.exit(1)
 
-    # Extract archives
-    ucf101_extracted = dataset_dir / "UCF-101"
-    if not ucf101_extracted.exists():
-        if not extract_rar(rar_path, dataset_dir):
-            logging.error("RAR extraction failed!")
-            sys.exit(1)
-    else:
-        logging.info("UCF-101 directory already exists, skipping extraction")
+    success, ucf101_extracted, splits_dir = extract_archives(
+        dataset_dir, rar_path, zip_path
+    )
+    if not success:
+        sys.exit(1)
 
-    # Extract splits
-    splits_dir = dataset_dir / "splits_01"
-    if not splits_dir.exists():
-        if not extract_zip(zip_path, dataset_dir):
-            logging.error("ZIP extraction failed!")
-            sys.exit(1)
-    else:
-        logging.info("Splits directory already exists, skipping extraction")
-
-    # Count videos and report
-    video_count = count_videos(ucf101_extracted)
-    logging.info("Dataset extraction complete!")
-    logging.info(f"Total videos found: {video_count}")
-    logging.info("Expected videos: ~13,320")
-
-    min_expected_videos = 10000
-    if video_count < min_expected_videos:
-        logging.warning("Video count seems low - extraction may be incomplete")
-
-    # Clean up archives to save space
-    cleanup_choice = input("Delete downloaded archives to save space? (y/N): ").lower()
-    if cleanup_choice == "y":
-        if rar_path.exists():
-            rar_path.unlink()
-            logging.info("Deleted UCF101.rar")
-        if zip_path.exists():
-            zip_path.unlink()
-            logging.info("Deleted splits.zip")
-
-    logging.info("UCF101 dataset download and extraction completed successfully!")
-    logging.info(f"Dataset location: {dataset_dir}")
-    logging.info(f"Videos: {ucf101_extracted}")
-    logging.info(f"Splits: {splits_dir}")
+    report_and_cleanup(ucf101_extracted, splits_dir, rar_path, zip_path)
 
 
 if __name__ == "__main__":
