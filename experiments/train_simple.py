@@ -31,24 +31,6 @@ class TrainingState:
     val_loader: DataLoader
 
 
-def log_model_params(model, **kwargs):
-    mlflow.log_param("model_type", model.__class__.__name__)
-
-    for key, value in kwargs.items():
-        if key == "device":
-            mlflow.log_param(key, str(value))
-        elif key in ("train_loader", "val_loader"):
-            param_name = f"{key.replace('_loader', '')}_samples"
-            mlflow.log_param(param_name, len(value.dataset))
-        else:
-            mlflow.log_param(key, value)
-
-    if hasattr(model, "reservoir_size"):
-        mlflow.log_param("reservoir_size", model.reservoir_size)
-    if hasattr(model, "rnn"):
-        mlflow.log_param("hidden_size", model.rnn.hidden_size)
-
-
 def train_epoch(state, epoch):
     state.model.train()
     train_loss = 0
@@ -103,14 +85,17 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    log_model_params(
-        model,
-        learning_rate=lr,
-        num_epochs=num_epochs,
-        device=device,
-        train_loader=train_loader,
-        val_loader=val_loader,
-    )
+    mlflow.log_param("model_type", model.__class__.__name__)
+    mlflow.log_param("learning_rate", lr)
+    mlflow.log_param("num_epochs", num_epochs)
+    mlflow.log_param("device", str(device))
+    mlflow.log_param("train_samples", len(train_loader.dataset))
+    mlflow.log_param("val_samples", len(val_loader.dataset))
+
+    if hasattr(model, "reservoir_size"):
+        mlflow.log_param("reservoir_size", model.reservoir_size)
+    if hasattr(model, "rnn"):
+        mlflow.log_param("hidden_size", model.rnn.hidden_size)
 
     logger.info(f"Training on {device}")
     logger.info(f"Model: {model.__class__.__name__}")
