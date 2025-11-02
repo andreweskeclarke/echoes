@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -20,14 +21,14 @@ from models.simple_models import SimpleESN, SimpleRNN
 logger = get_logger(__name__)
 
 
+@dataclass
 class TrainingState:
-    def __init__(self, model, device, criterion, optimizer, train_loader, val_loader):  # noqa: PLR0913
-        self.model = model
-        self.device = device
-        self.criterion = criterion
-        self.optimizer = optimizer
-        self.train_loader = train_loader
-        self.val_loader = val_loader
+    model: object
+    device: torch.device
+    criterion: nn.Module
+    optimizer: torch.optim.Optimizer
+    train_loader: DataLoader
+    val_loader: DataLoader
 
 
 def log_model_params(model, lr, num_epochs, device, train_loader, val_loader):  # noqa: PLR0913

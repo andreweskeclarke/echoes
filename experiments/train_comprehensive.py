@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -22,18 +23,20 @@ from models.simple_models import DeepESN, DeepRNN, SimpleESN, SimpleRNN
 logger = get_logger(__name__)
 
 
+@dataclass
 class TrainingState:
-    def __init__(  # noqa: PLR0913
-        self, model, device, criterion, optimizer, train_loader, val_loader, writer
-    ):
-        self.model = model
-        self.device = device
-        self.criterion = criterion
-        self.optimizer = optimizer
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.writer = writer
-        self.param_counts = count_parameters(model) if model else {}
+    model: object
+    device: torch.device
+    criterion: nn.Module
+    optimizer: torch.optim.Optimizer
+    train_loader: DataLoader
+    val_loader: DataLoader
+    writer: SummaryWriter
+    param_counts: dict = None
+
+    def __post_init__(self):
+        if self.param_counts is None:
+            self.param_counts = count_parameters(self.model) if self.model else {}
 
 
 def count_parameters(model):
