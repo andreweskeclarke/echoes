@@ -40,4 +40,5 @@ test:
 	@$(CONDA_ACTIVATE) && pytest tests/
 
 deploy:
-	@$(CONDA_ACTIVATE) && ./scripts/local_deploy.sh
+	@echo "Deploying services (requires sudo)..."
+	@sudo bash -c "$(CONDA_ACTIVATE) && ./scripts/local_deploy.sh"
