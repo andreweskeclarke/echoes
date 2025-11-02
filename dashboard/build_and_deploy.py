@@ -288,103 +288,17 @@ class PyTorchModelAnalyzer:
             logger.warning(f"Could not find model file for run {run_id}: {e}")
             return None
 
-    def analyze_pytorch_model(self, model_path: Path) -> list[dict[str, Any]]:  # noqa: PLR0912, PLR0915
+    def analyze_pytorch_model(self, model_path: Path) -> list[dict[str, Any]]:
         """Extract layer information from a saved PyTorch model"""
-        # TODO: Refactor this method - too many branches and statements
         try:
-            # Load the model
-            device = torch.device("cpu")
-            model = torch.load(model_path, map_location=device, weights_only=False)
+            state_dict = self._load_model_state_dict(model_path)
+            if not state_dict:
+                return []
 
-            # Try to get state_dict from model, otherwise assume it's already one
-            if hasattr(model, "state_dict"):
-                state_dict = model.state_dict()
-            elif hasattr(model, "items"):
-                state_dict = model
-            else:
-                # Try to get parameters from the model directly
-                state_dict = {}
-                if hasattr(model, "named_parameters"):
-                    for name, param in model.named_parameters():
-                        state_dict[name] = param
-                else:
-                    logger.warning(
-                        f"Cannot extract parameters from model type: {type(model)}"
-                    )
-                    return []
+            layer_groups = self._group_parameters_by_layer(state_dict)
+            layers = self._analyze_layer_groups(layer_groups)
 
-            layers = []
-            layer_groups = {}
-            min_parts = 2
-
-            # Group parameters by layer prefix
-            for name, tensor in state_dict.items():
-                parts = name.split(".")
-                if len(parts) >= min_parts:
-                    layer_name = ".".join(parts[:-1])  # Remove 'weight' or 'bias'
-                    if layer_name not in layer_groups:
-                        layer_groups[layer_name] = []
-                    layer_groups[layer_name].append((name, tensor))
-
-            # Analyze each layer group
-            for layer_name, params in layer_groups.items():
-                total_params = sum(tensor.numel() for _, tensor in params)
-
-                # Determine layer type
-                layer_type = "unknown"
-                description = f"Parameters: {total_params:,}"
-
-                if (
-                    "w_in" in layer_name.lower()
-                    or "input_weights" in layer_name.lower()
-                ):
-                    layer_type = "input"
-                    description = (
-                        f"Input → Reservoir weights: {total_params:,} parameters"
-                    )
-                elif "lstm" in layer_name.lower() or "rnn" in layer_name.lower():
-                    layer_type = "rnn"
-                    description = f"LSTM layer: {total_params:,} parameters"
-                elif "fc" in layer_name.lower() or "linear" in layer_name.lower():
-                    if "output" in layer_name.lower() or layer_name.endswith("fc2"):
-                        layer_type = "output"
-                        description = f"Output layer: {total_params:,} parameters"
-                    else:
-                        layer_type = "fc"
-                        description = f"Fully connected: {total_params:,} parameters"
-                elif "reservoir" in layer_name.lower():
-                    layer_type = "reservoir"
-                    description = f"Reservoir: {total_params:,} parameters"
-                elif "readout" in layer_name.lower():
-                    layer_type = "output"
-                    description = f"Readout layer: {total_params:,} parameters"
-                elif "layer_connection" in layer_name.lower():
-                    layer_type = "connection"
-                    description = (
-                        f"Layer connection weights: {total_params:,} parameters"
-                    )
-
-                # Check if layer is trainable (simplified heuristic)
-                trainable = not (
-                    "reservoir" in layer_name.lower()
-                    or "input_weights" in layer_name.lower()
-                    or "w_in" in layer_name.lower()
-                )
-
-                layers.append(
-                    {
-                        "name": layer_name,
-                        "params": total_params,
-                        "trainable": trainable,
-                        "type": layer_type,
-                        "description": description,
-                    }
-                )
-
-            # Post-process layers to add missing components for ESN models
             layers = self._add_missing_esn_components(layers)
-
-            # Sort layers by parameter count (descending)
             layers.sort(key=lambda x: x["params"], reverse=True)
 
             return layers
@@ -392,6 +306,107 @@ class PyTorchModelAnalyzer:
         except Exception as e:
             logger.warning(f"Could not analyze PyTorch model {model_path}: {e}")
             return []
+
+    def _load_model_state_dict(self, model_path: Path) -> dict | None:
+        """Load state dict from PyTorch model file"""
+        device = torch.device("cpu")
+        model = torch.load(model_path, map_location=device, weights_only=False)
+
+        if hasattr(model, "state_dict"):
+            return model.state_dict()
+        elif hasattr(model, "items"):
+            return model
+        elif hasattr(model, "named_parameters"):
+            state_dict = {}
+            for name, param in model.named_parameters():
+                state_dict[name] = param
+            return state_dict
+        else:
+            logger.warning(f"Cannot extract parameters from model type: {type(model)}")
+            return None
+
+    def _group_parameters_by_layer(
+        self, state_dict: dict
+    ) -> dict[str, list[tuple[str, Any]]]:
+        """Group parameters by layer prefix"""
+        layer_groups = {}
+        min_parts = 2
+
+        for name, tensor in state_dict.items():
+            parts = name.split(".")
+            if len(parts) >= min_parts:
+                layer_name = ".".join(parts[:-1])
+                if layer_name not in layer_groups:
+                    layer_groups[layer_name] = []
+                layer_groups[layer_name].append((name, tensor))
+
+        return layer_groups
+
+    def _analyze_layer_groups(
+        self, layer_groups: dict[str, list[tuple[str, Any]]]
+    ) -> list[dict[str, Any]]:
+        """Analyze each layer group and extract metadata"""
+        layers = []
+
+        for layer_name, params in layer_groups.items():
+            total_params = sum(tensor.numel() for _, tensor in params)
+            layer_type, description = self._determine_layer_type(
+                layer_name, total_params
+            )
+            trainable = self._is_layer_trainable(layer_name)
+
+            layers.append(
+                {
+                    "name": layer_name,
+                    "params": total_params,
+                    "trainable": trainable,
+                    "type": layer_type,
+                    "description": description,
+                }
+            )
+
+        return layers
+
+    def _determine_layer_type(self, layer_name: str, total_params: int) -> tuple:
+        """Determine layer type and description from name and parameters"""
+        name_lower = layer_name.lower()
+
+        layer_type_map = {
+            ("w_in", "input_weights"): (
+                "input",
+                f"Input → Reservoir weights: {total_params:,} parameters",
+            ),
+            ("lstm", "rnn"): ("rnn", f"LSTM layer: {total_params:,} parameters"),
+            ("reservoir",): (
+                "reservoir",
+                f"Reservoir: {total_params:,} parameters",
+            ),
+            ("readout",): (
+                "output",
+                f"Readout layer: {total_params:,} parameters",
+            ),
+            ("layer_connection",): (
+                "connection",
+                f"Layer connection weights: {total_params:,} parameters",
+            ),
+        }
+
+        for keywords, result in layer_type_map.items():
+            if any(kw in name_lower for kw in keywords):
+                return result
+
+        if "fc" in name_lower or "linear" in name_lower:
+            if "output" in name_lower or layer_name.endswith("fc2"):
+                return "output", f"Output layer: {total_params:,} parameters"
+            return "fc", f"Fully connected: {total_params:,} parameters"
+
+        return "unknown", f"Parameters: {total_params:,}"
+
+    def _is_layer_trainable(self, layer_name: str) -> bool:
+        """Check if layer is trainable based on naming heuristic"""
+        name_lower = layer_name.lower()
+        frozen_keywords = ("reservoir", "input_weights", "w_in")
+        return not any(keyword in name_lower for keyword in frozen_keywords)
 
     def _add_missing_esn_components(
         self, layers: list[dict[str, Any]]
