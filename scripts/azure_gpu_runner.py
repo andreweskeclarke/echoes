@@ -77,6 +77,8 @@ class VMConfig:
     location: str = "eastus"
     auto_destroy_hours: int = 4
     ssh_key_path: str = field(default_factory=_default_ssh_key)
+    vnet_name: str = "headquarters-vnet"
+    subnet_name: str = "default"
 
 
 class AzureGPURunner:
@@ -134,7 +136,7 @@ class AzureGPURunner:
             time.gmtime(time.time() + self.config.auto_destroy_hours * 3600),
         )
 
-        # Create VM with auto-destroy tag
+        # Create VM with auto-destroy tag, no public IP (use private networking)
         create_cmd = [
             "vm",
             "create",
@@ -152,6 +154,12 @@ class AzureGPURunner:
             self.config.ssh_key_path,
             "--location",
             self.config.location,
+            "--vnet-name",
+            self.config.vnet_name,
+            "--subnet",
+            self.config.subnet_name,
+            "--public-ip-address",
+            "",
             "--tags",
             f"AutoShutdownTime={auto_destroy_time}",
             "CreatedBy=echoes-gpu-runner",
@@ -161,7 +169,7 @@ class AzureGPURunner:
 
         result = self._run_az_command(create_cmd)
         vm_info = json.loads(result.stdout)
-        self.vm_ip = vm_info["publicIpAddress"]
+        self.vm_ip = vm_info["privateIpAddress"]
         self._vm_created = True
 
         logger.info(f"VM created successfully. IP: {self.vm_ip}")
@@ -225,17 +233,14 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             f"ln -sf {data_dir}/tfruns ~/echoes/tfruns",
             (
                 "wget "
-                "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh "
-                "-O miniconda.sh"
+                "https://github.com/conda-forge/miniforge/releases/latest/download/"
+                "Miniforge3-Linux-x86_64.sh "
+                "-O miniforge.sh"
             ),
-            "bash miniconda.sh -b -p $HOME/miniconda",
-            "rm miniconda.sh",
+            "bash miniforge.sh -b -p $HOME/miniforge",
+            "rm miniforge.sh",
             (
-                "cd ~/echoes && export PATH=$HOME/miniconda/bin:$PATH && "
-                "conda install mamba -c conda-forge -y 2>&1"
-            ),
-            (
-                "cd ~/echoes && export PATH=$HOME/miniconda/bin:$PATH && "
+                "cd ~/echoes && export PATH=$HOME/miniforge/bin:$PATH && "
                 "mamba env create -f environment.yml -y 2>&1"
             ),
         ]
@@ -248,33 +253,33 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         logger.info("Environment setup completed")
 
     def copy_dataset(
-        self, data_dir: str = "/tmp/echoes_data", source_vm_ip: str | None = None
+        self, data_dir: str = "/tmp/echoes_data", source_path: str = "/mnt/echoes_data"
     ):
-        """Copy UCF101 dataset from source VM."""
-        if not source_vm_ip:
-            azure_config = load_azure_config()
-            source_vm_ip = self._get_vm_ip(
-                "headquarters", azure_config["resource_group"]
-            )
+        """Copy UCF101 dataset from headquarters to remote VM via push-based rsync."""
+        logger.info(f"Copying dataset from {source_path} to {self.vm_ip}:{data_dir}...")
 
-        logger.info(f"Copying dataset from {source_vm_ip} to {self.vm_ip}...")
+        result = self._run_ssh_command(f"mkdir -p {data_dir}")
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to create directory {data_dir} on remote VM")
 
-        ssh_opts = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-        copy_commands = [
-            f"mkdir -p {data_dir}",
-            f"rsync -avz --progress -e '{ssh_opts}' "
-            f"aclarke@{source_vm_ip}:/mnt/echoes_data/ucf101/ {data_dir}/ucf101/",
+        rsync_cmd = [
+            "rsync",
+            "-avz",
+            "--progress",
+            "-e",
+            "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+            f"{source_path}/ucf101/",
+            f"aclarke@{self.vm_ip}:{data_dir}/ucf101/",
         ]
-
-        for cmd in copy_commands:
-            result = self._run_ssh_command(cmd, capture_output=False)
-            if result.returncode != 0:
-                raise RuntimeError(f"Dataset copy failed at command: {cmd}")
+        logger.info(f"Running: {' '.join(rsync_cmd)}")
+        result = subprocess.run(rsync_cmd, check=False)
+        if result.returncode != 0:
+            raise RuntimeError("Dataset copy failed")
 
         logger.info("Dataset copy completed")
 
     def _get_vm_ip(self, vm_name: str, resource_group: str) -> str:
-        """Get public IP of a VM."""
+        """Get private IP of a VM (for VNet communication)."""
         result = self._run_az_command(
             [
                 "vm",
@@ -285,7 +290,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
                 vm_name,
                 "--show-details",
                 "--query",
-                "publicIps",
+                "privateIps",
                 "--output",
                 "tsv",
             ]
@@ -298,11 +303,11 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         """Run the experiment script on the VM."""
         logger.info(f"Running experiment: {experiment_script}")
 
-        # Modify the experiment script to use the VM's data directory
         experiment_cmd = f"""
-        cd ~/echoes && 
-        source ~/.bashrc && 
-        conda activate echoes && 
+        cd ~/echoes &&
+        export PATH=$HOME/miniforge/bin:$PATH &&
+        source $HOME/miniforge/etc/profile.d/conda.sh &&
+        conda activate echoes &&
         export CUDA_VISIBLE_DEVICES=0 &&
         sed -i 's|/mnt/echoes_data|{data_dir}|g' {experiment_script} &&
         python {experiment_script}
@@ -370,30 +375,122 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 
         logger.info(f"Results downloaded to {local_results_dir}")
 
+    def _get_vm_resources(self) -> dict[str, str]:
+        """Get associated resource IDs for the VM before deletion."""
+        try:
+            result = self._run_az_command(
+                [
+                    "vm",
+                    "show",
+                    "--resource-group",
+                    self.config.resource_group,
+                    "--name",
+                    self.config.vm_name,
+                    "--output",
+                    "json",
+                ]
+            )
+            vm_info = json.loads(result.stdout)
+
+            resources = {}
+            if vm_info.get("storageProfile", {}).get("osDisk", {}).get("managedDisk"):
+                resources["os_disk"] = vm_info["storageProfile"]["osDisk"]["name"]
+
+            if vm_info.get("networkProfile", {}).get("networkInterfaces"):
+                nic_id = vm_info["networkProfile"]["networkInterfaces"][0]["id"]
+                resources["nic"] = nic_id.split("/")[-1]
+
+                nic_result = self._run_az_command(
+                    ["network", "nic", "show", "--ids", nic_id, "--output", "json"]
+                )
+                nic_info = json.loads(nic_result.stdout)
+                if nic_info.get("networkSecurityGroup"):
+                    nsg_id = nic_info["networkSecurityGroup"]["id"]
+                    resources["nsg"] = nsg_id.split("/")[-1]
+
+            return resources
+        except Exception as e:
+            logger.warning(f"Could not get VM resources: {e}")
+            return {}
+
     def cleanup(self):
-        """Delete the VM and associated resources."""
+        """Delete the VM and associated resources (NIC, NSG, disk)."""
         if not self._vm_created:
             logger.info("No VM to cleanup")
             return
 
         logger.info(f"Deleting VM {self.config.vm_name} (aclarke@{self.vm_ip})")
 
-        delete_cmd = [
-            "vm",
-            "delete",
-            "--resource-group",
-            self.config.resource_group,
-            "--name",
-            self.config.vm_name,
-            "--yes",
-        ]
+        resources = self._get_vm_resources()
 
         try:
-            self._run_az_command(delete_cmd)
+            self._run_az_command(
+                [
+                    "vm",
+                    "delete",
+                    "--resource-group",
+                    self.config.resource_group,
+                    "--name",
+                    self.config.vm_name,
+                    "--yes",
+                ]
+            )
             logger.info("VM deleted successfully")
             self._vm_created = False
         except Exception as e:
             logger.error(f"Failed to delete VM: {e}")
+            return
+
+        if resources.get("nic"):
+            try:
+                self._run_az_command(
+                    [
+                        "network",
+                        "nic",
+                        "delete",
+                        "--resource-group",
+                        self.config.resource_group,
+                        "--name",
+                        resources["nic"],
+                    ]
+                )
+                logger.info(f"NIC {resources['nic']} deleted")
+            except Exception as e:
+                logger.warning(f"Failed to delete NIC: {e}")
+
+        if resources.get("nsg"):
+            try:
+                self._run_az_command(
+                    [
+                        "network",
+                        "nsg",
+                        "delete",
+                        "--resource-group",
+                        self.config.resource_group,
+                        "--name",
+                        resources["nsg"],
+                    ]
+                )
+                logger.info(f"NSG {resources['nsg']} deleted")
+            except Exception as e:
+                logger.warning(f"Failed to delete NSG: {e}")
+
+        if resources.get("os_disk"):
+            try:
+                self._run_az_command(
+                    [
+                        "disk",
+                        "delete",
+                        "--resource-group",
+                        self.config.resource_group,
+                        "--name",
+                        resources["os_disk"],
+                        "--yes",
+                    ]
+                )
+                logger.info(f"OS disk {resources['os_disk']} deleted")
+            except Exception as e:
+                logger.warning(f"Failed to delete OS disk: {e}")
 
     @contextmanager
     def vm_context(self):
@@ -450,7 +547,7 @@ def main():
     # Use local directory on remote VM, not headquarters mount point
     data_dir = args.data_dir or "/home/aclarke/echoes_data"
 
-    vm_name = f"echoes-vm-{datetime.now().strftime('%Y%m%d-%H.%M.%S')}"
+    vm_name = f"echoes-vm-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     experiment_path = Path(args.experiment_script)
     if not experiment_path.exists():
