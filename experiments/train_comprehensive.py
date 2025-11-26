@@ -91,7 +91,7 @@ def setup_tensorboard_logging(model, experiment_name, param_counts):
     return writer
 
 
-def train_comprehensive_epoch(state, epoch):
+def train_comprehensive_epoch(state: TrainingState, epoch: int):
     state.model.train()
     train_loss = 0
     train_correct = 0
@@ -120,7 +120,7 @@ def train_comprehensive_epoch(state, epoch):
     return train_loss, train_acc
 
 
-def validate_comprehensive_epoch(state):
+def validate_comprehensive_epoch(state: TrainingState):
     state.model.eval()
     val_loss = 0
     val_correct = 0
@@ -217,32 +217,37 @@ def train_model(model, train_loader, val_loader, **kwargs):
 def main():
     setup_logging("INFO")
 
-    # Set MLflow experiment
     experiment_name = "UCF101_Architecture_Comparison"
     mlflow.set_experiment(experiment_name)
 
-    # Dataset paths
     data_dir = "/mnt/echoes_data/ucf101"
     train_split = f"{data_dir}/splits_01/trainlist01.txt"
     test_split = f"{data_dir}/splits_01/testlist01.txt"
 
-    # Create datasets (all 101 classes)
-    train_dataset = UCF101Dataset(data_dir, train_split)
-
-    # Use test split for validation with SAME classes as training
-    val_dataset = UCF101Dataset(
-        data_dir, test_split, class_to_idx=train_dataset.class_to_idx
+    train_dataset = UCF101Dataset(
+        data_dir,
+        train_split,
     )
-    # Take subset for faster validation
-    # val_dataset.samples = val_dataset.samples[:150]  # ~10 samples per class
-
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
+    val_dataset = UCF101Dataset(
+        data_dir,
+        test_split,
+        class_to_idx=train_dataset.class_to_idx,
+    )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=16,
+        shuffle=True,
+        num_workers=2,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=16,
+        shuffle=False,
+        num_workers=2,
+    )
 
     logger.info(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
     logger.info(f"Number of classes: {len(train_dataset.class_to_idx)}")
-
-    # Log class distribution
     logger.info("Classes used:")
     for class_name, idx in train_dataset.class_to_idx.items():
         train_count = sum(1 for _, label in train_dataset.samples if label == idx)
@@ -254,27 +259,16 @@ def main():
     num_classes = len(train_dataset.class_to_idx)
 
     model_configs = [
-        # # Simple RNN configurations
-        # {"type": "RNN", "hidden_size": 32, "num_layers": 1},
-        # {"type": "RNN", "hidden_size": 64, "num_layers": 1},
-        # {"type": "RNN", "hidden_size": 128, "num_layers": 1},
-        # {"type": "RNN", "hidden_size": 256, "num_layers": 1},
-        #
-        # # Deep RNN configurations
-        # {"type": "DeepRNN", "hidden_size": 64, "num_layers": 2},
-        # {"type": "DeepRNN", "hidden_size": 64, "num_layers": 3},
-        # {"type": "DeepRNN", "hidden_size": 128, "num_layers": 2},
-        # {"type": "DeepRNN", "hidden_size": 128, "num_layers": 3},
-        # Simple ESN configurations
-        {"type": "ESN", "reservoir_size": 250},
-        {"type": "ESN", "reservoir_size": 500},
-        {"type": "ESN", "reservoir_size": 1000},
+        {"type": "RNN", "hidden_size": 256, "num_layers": 1},
+        {"type": "RNN", "hidden_size": 512, "num_layers": 1},
+        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2},
+        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3},
+        {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2},
         {"type": "ESN", "reservoir_size": 2000},
-        # Deep ESN configurations
-        {"type": "DeepESN", "reservoir_size": 500, "num_layers": 2},
-        {"type": "DeepESN", "reservoir_size": 500, "num_layers": 3},
-        {"type": "DeepESN", "reservoir_size": 1000, "num_layers": 2},
-        {"type": "DeepESN", "reservoir_size": 1000, "num_layers": 3},
+        {"type": "ESN", "reservoir_size": 5000},
+        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2},
+        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 3},
+        {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2},
     ]
 
     results = {}
@@ -322,7 +316,7 @@ def main():
                 model,
                 train_loader,
                 val_loader,
-                num_epochs=10,
+                num_epochs=50,
                 lr=0.001,
                 experiment_name=experiment_name,
             )

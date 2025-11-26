@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import atexit
+import datetime
 import json
 import os
 import signal
@@ -166,9 +167,6 @@ class AzureGPURunner:
         logger.info(f"VM created successfully. IP: {self.vm_ip}")
         logger.info(f"VM will auto-destroy at: {auto_destroy_time} UTC")
 
-        # Set up auto-shutdown on the VM itself as backup
-        self._setup_vm_auto_shutdown()
-
         # Wait for VM to be ready
         logger.info("Waiting for VM to be ready...")
         time.sleep(60)  # Give VM time to boot
@@ -191,16 +189,9 @@ class AzureGPURunner:
 
         return self.vm_ip
 
-    def _setup_vm_auto_shutdown(self):
-        """Set up auto-shutdown script on the VM as a backup safety measure."""
-        logger.info("Setting up VM auto-shutdown as backup safety...")
-        # Auto-shutdown is configured in setup_environment
-
     def setup_environment(self, data_dir: str):
         """Set up the conda environment and codebase on the VM."""
         logger.info("Setting up environment on VM...")
-
-        # Upload project code
         logger.info("Uploading codebase...")
         subprocess.run(
             [
@@ -238,22 +229,14 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
                 "-O miniconda.sh"
             ),
             "bash miniconda.sh -b -p $HOME/miniconda",
-            "export PATH=$HOME/miniconda/bin:$PATH && conda init bash",
+            "rm miniconda.sh",
             (
-                "export PATH=$HOME/miniconda/bin:$PATH && "
-                "conda tos accept --override-channels "
-                "--channel https://repo.anaconda.com/pkgs/main"
-            ),
-            (
-                "export PATH=$HOME/miniconda/bin:$PATH && "
-                "conda tos accept --override-channels "
-                "--channel https://repo.anaconda.com/pkgs/r"
+                "cd ~/echoes && export PATH=$HOME/miniconda/bin:$PATH && "
+                "conda install mamba -c conda-forge -y 2>&1"
             ),
             (
                 "cd ~/echoes && export PATH=$HOME/miniconda/bin:$PATH && "
-                "(conda install mamba -c conda-forge -y && "
-                "mamba env create -f environment.yml -y || "
-                "conda env create -f environment.yml -y)"
+                "mamba env create -f environment.yml -y 2>&1"
             ),
         ]
 
@@ -395,8 +378,6 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 
         logger.info(f"Deleting VM {self.config.vm_name} (aclarke@{self.vm_ip})")
 
-        time.sleep(99999)
-
         delete_cmd = [
             "vm",
             "delete",
@@ -444,7 +425,6 @@ def main():
     parser.add_argument(
         "--resource-group", help="Azure resource group (overrides config)"
     )
-    parser.add_argument("--vm-name", help="VM name (default: auto-generated)")
     parser.add_argument("--vm-size", default="Standard_D2as_v4", help="Azure VM size")
     parser.add_argument("--location", help="Azure location (overrides config)")
     parser.add_argument("--ssh-key", help="Path to SSH public key")
@@ -460,9 +440,6 @@ def main():
         default=4,
         help="Hours after which VM auto-destroys",
     )
-    parser.add_argument(
-        "--skip-dataset", action="store_true", help="Skip dataset download"
-    )
 
     args = parser.parse_args()
 
@@ -473,9 +450,7 @@ def main():
     # Use local directory on remote VM, not headquarters mount point
     data_dir = args.data_dir or "/home/aclarke/echoes_data"
 
-    if not args.vm_name:
-        timestamp = int(time.time())
-        args.vm_name = f"echoes-vm-{timestamp}"
+    vm_name = f"echoes-vm-{datetime.now().strftime('%Y%m%d-%H.%M.%S')}"
 
     experiment_path = Path(args.experiment_script)
     if not experiment_path.exists():
@@ -484,10 +459,10 @@ def main():
 
     config = VMConfig(
         resource_group=resource_group,
-        vm_name=args.vm_name,
+        vm_name=vm_name,
         vm_size=args.vm_size,
         location=location,
-        ssh_key_path=args.ssh_key,
+        ssh_key_path=args.ssh_key or _default_ssh_key(),
         auto_destroy_hours=args.auto_destroy_hours,
     )
     runner = AzureGPURunner(config)
@@ -495,10 +470,7 @@ def main():
     with runner.vm_context():
         logger.info(f"VM is ready at {runner.vm_ip}")
         runner.setup_environment(data_dir)
-
-        if not args.skip_dataset:
-            runner.copy_dataset(data_dir)
-
+        runner.copy_dataset(data_dir)
         runner.run_experiment(args.experiment_script, data_dir)
         runner.download_results(args.results_dir)
 
