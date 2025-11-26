@@ -1,8 +1,6 @@
 name: echoes
 channels:
-  - pytorch
   - conda-forge
-  - defaults
 dependencies:
   - python=3.11
   - pytorch>=2.0.0
