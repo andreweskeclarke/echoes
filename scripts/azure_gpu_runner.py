@@ -81,6 +81,9 @@ class VMConfig:
     subnet_name: str = "default"
 
 
+SSH_OPTS = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+
 class AzureGPURunner:
     def __init__(self, config):
         self.config = config
@@ -205,6 +208,8 @@ class AzureGPURunner:
             [
                 "rsync",
                 "-avz",
+                "-e",
+                SSH_OPTS,
                 "--exclude=.git",
                 "--exclude=__pycache__",
                 "--exclude=*.pyc",
@@ -267,7 +272,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             "-avz",
             "--progress",
             "-e",
-            "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+            SSH_OPTS,
             f"{source_path}/ucf101/",
             f"aclarke@{self.vm_ip}:{data_dir}/ucf101/",
         ]
@@ -347,7 +352,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             if exp_result.returncode == 0 and exp_result.stdout.strip() != "no_exp":
                 experiment_id = exp_result.stdout.strip()
                 rsync_cmd = (
-                    f"rsync -avz aclarke@{self.vm_ip}:~/echoes/mlruns/"
+                    f"rsync -avz -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/mlruns/"
                     f"{experiment_id}/{latest_run_id}/ "
                     f"{local_results_dir}/mlruns/{experiment_id}/{latest_run_id}/"
                 )
@@ -366,7 +371,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 
         try:
             logs_cmd = (
-                f"rsync -avz aclarke@{self.vm_ip}:~/echoes/logs/ "
+                f"rsync -avz -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/logs/ "
                 f"{local_results_dir}/logs/"
             )
             subprocess.run(logs_cmd, shell=True, check=True)
