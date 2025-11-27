@@ -32,12 +32,7 @@ When working on any task, follow this workflow:
 ## Development Commands
 
 ### Code Quality and Testing
-- **Lint code**: `ruff check .` (with auto-fix: `ruff check --fix .`)
-- **Format code**: `ruff format .`
-- **Run pre-commit hooks**: `pre-commit run --all-files`
-- **Run unit tests**: `pytest tests/`
-- **Run tests with coverage**: `pytest --cov=data --cov=scripts tests/`
-- **Run integration tests**: `RUN_INTEGRATION_TESTS=1 pytest tests/test_integration.py`
+- **Lint code**: `make check`
 
 ### Dataset Preparation
 - **Download UCF101 dataset**: `python scripts/download_ucf101_full.py /mnt/echoes_data`
