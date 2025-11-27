@@ -14,6 +14,7 @@ import mlflow.pytorch
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from data.logging_config import get_logger, setup_logging
 from experiments.dataset import UCF101Dataset
@@ -30,6 +31,7 @@ class TrainingState:
     optimizer: torch.optim.Optimizer
     train_loader: DataLoader
     val_loader: DataLoader
+    writer: SummaryWriter
 
 
 def setup_dataloaders(data_dir):
@@ -54,15 +56,18 @@ def run_training_loop(state):
         train_loss, train_acc = run_training_epoch(state, epoch)
         val_loss, val_acc = run_validation_epoch(state, epoch)
 
-        mlflow.log_metric(
-            "train_loss", train_loss / len(state.train_loader), step=epoch
-        )
+        avg_train_loss = train_loss / len(state.train_loader)
+
+        mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
         mlflow.log_metric("train_accuracy", train_acc, step=epoch)
         mlflow.log_metric("val_accuracy", val_acc, step=epoch)
 
+        state.writer.add_scalar("Loss/Train", avg_train_loss, epoch)
+        state.writer.add_scalar("Accuracy/Train", train_acc, epoch)
+        state.writer.add_scalar("Accuracy/Validation", val_acc, epoch)
+
         logger.info(
-            f"Epoch {epoch + 1}: Train Loss: "
-            f"{train_loss / len(state.train_loader):.4f}, "
+            f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, "
             f"Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%"
         )
 
@@ -136,6 +141,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+    writer = SummaryWriter("tfruns/Azure_Test_ESN")
+
     with mlflow.start_run(run_name="azure_test_esn"):
         mlflow.log_param("model_type", "SimpleESN")
         mlflow.log_param("reservoir_size", 100)
@@ -146,7 +153,7 @@ def main():
         logger.info("Starting mini training (2 epochs)...")
 
         state = TrainingState(
-            model, device, criterion, optimizer, train_loader, val_loader
+            model, device, criterion, optimizer, train_loader, val_loader, writer
         )
         train_acc, val_acc = run_training_loop(state)
 
@@ -155,6 +162,8 @@ def main():
         logger.info("Test experiment completed successfully!")
         logger.info(f"Final train accuracy: {train_acc:.2f}%")
         logger.info(f"Final validation accuracy: {val_acc:.2f}%")
+
+    writer.close()
 
 
 if __name__ == "__main__":

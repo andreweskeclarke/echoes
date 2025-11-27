@@ -22,6 +22,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -79,6 +80,7 @@ class VMConfig:
     ssh_key_path: str = field(default_factory=_default_ssh_key)
     vnet_name: str = "headquarters-vnet"
     subnet_name: str = "default"
+    sync_interval_minutes: int = 5
 
 
 SSH_OPTS = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
@@ -89,6 +91,9 @@ class AzureGPURunner:
         self.config = config
         self.vm_ip = None
         self._vm_created = False
+        self._sync_stop_event = threading.Event()
+        self._sync_thread = None
+        self._results_dir = None
 
     def _run_az_command(
         self, cmd: list, capture_output: bool = True
@@ -207,7 +212,7 @@ class AzureGPURunner:
         subprocess.run(
             [
                 "rsync",
-                "-avz",
+                "-az",
                 "-e",
                 SSH_OPTS,
                 "--exclude=.git",
@@ -269,8 +274,8 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 
         rsync_cmd = [
             "rsync",
-            "-avz",
-            "--progress",
+            "-az",
+            "--info=progress2",
             "-e",
             SSH_OPTS,
             f"{source_path}/ucf101/",
@@ -308,6 +313,9 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         """Run the experiment script on the VM."""
         logger.info(f"Running experiment: {experiment_script}")
 
+        script_name = Path(experiment_script).stem
+        log_file = f"~/echoes/logs/{script_name}_{self.config.vm_name}.log"
+
         experiment_cmd = f"""
         cd ~/echoes &&
         export PATH=$HOME/miniforge/bin:$PATH &&
@@ -315,7 +323,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         conda activate echoes &&
         export CUDA_VISIBLE_DEVICES=0 &&
         sed -i 's|/mnt/echoes_data|{data_dir}|g' {experiment_script} &&
-        python {experiment_script}
+        python {experiment_script} 2>&1 | tee {log_file}
         """
 
         result = self._run_ssh_command(experiment_cmd, capture_output=False)
@@ -335,50 +343,101 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 
         Path(local_results_dir).mkdir(exist_ok=True)
 
-        get_latest_run_cmd = (
-            "ls -t ~/echoes/mlruns/*/*/meta.yaml 2>/dev/null | head -1 | "
-            "cut -d'/' -f6 || echo 'no_runs'"
-        )
-        result = self._run_ssh_command(get_latest_run_cmd)
-
-        if result.returncode == 0 and result.stdout.strip() != "no_runs":
-            latest_run_id = result.stdout.strip()
-            experiment_id_cmd = (
-                "ls -t ~/echoes/mlruns/*/*/meta.yaml 2>/dev/null | head -1 | "
-                "cut -d'/' -f5 || echo 'no_exp'"
+        try:
+            Path(f"{local_results_dir}/mlruns").mkdir(parents=True, exist_ok=True)
+            mlruns_cmd = (
+                f"rsync -az -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/mlruns/ "
+                f"{local_results_dir}/mlruns/"
             )
-            exp_result = self._run_ssh_command(experiment_id_cmd)
-
-            if exp_result.returncode == 0 and exp_result.stdout.strip() != "no_exp":
-                experiment_id = exp_result.stdout.strip()
-                rsync_cmd = (
-                    f"rsync -avz -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/mlruns/"
-                    f"{experiment_id}/{latest_run_id}/ "
-                    f"{local_results_dir}/mlruns/{experiment_id}/{latest_run_id}/"
-                )
-
-                try:
-                    subprocess.run(rsync_cmd, shell=True, check=True)
-                    logger.info(
-                        f"Downloaded experiment {experiment_id}, run {latest_run_id}"
-                    )
-                except subprocess.CalledProcessError:
-                    logger.warning(f"Failed to download with command: {rsync_cmd}")
-            else:
-                logger.warning("Could not determine experiment ID")
-        else:
-            logger.warning("No MLflow runs found to download")
+            subprocess.run(mlruns_cmd, shell=True, check=True)
+            logger.info("Downloaded MLflow runs")
+        except subprocess.CalledProcessError:
+            logger.warning("Failed to download MLflow runs")
 
         try:
+            Path(f"{local_results_dir}/logs").mkdir(parents=True, exist_ok=True)
             logs_cmd = (
-                f"rsync -avz -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/logs/ "
+                f"rsync -az -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/logs/ "
                 f"{local_results_dir}/logs/"
             )
             subprocess.run(logs_cmd, shell=True, check=True)
+            logger.info("Downloaded logs")
         except subprocess.CalledProcessError:
             logger.warning("Failed to download logs")
 
+        try:
+            Path(f"{local_results_dir}/tfruns").mkdir(parents=True, exist_ok=True)
+            tfruns_cmd = (
+                f"rsync -az -e '{SSH_OPTS}' aclarke@{self.vm_ip}:~/echoes/tfruns/ "
+                f"{local_results_dir}/tfruns/"
+            )
+            subprocess.run(tfruns_cmd, shell=True, check=True)
+            logger.info("Downloaded TensorBoard runs")
+        except subprocess.CalledProcessError:
+            logger.warning("Failed to download TensorBoard runs")
+
         logger.info(f"Results downloaded to {local_results_dir}")
+
+    def start_background_sync(self, results_dir: str):
+        """Start background thread that periodically syncs results."""
+        if self.config.sync_interval_minutes <= 0:
+            logger.info("Background sync disabled (sync_interval_minutes <= 0)")
+            return
+
+        self._results_dir = results_dir
+        self._sync_stop_event.clear()
+        self._sync_thread = threading.Thread(
+            target=self._background_sync_loop, daemon=True
+        )
+        self._sync_thread.start()
+        logger.info(
+            f"Background sync started (every {self.config.sync_interval_minutes} min)"
+        )
+
+    def stop_background_sync(self):
+        """Stop the background sync thread."""
+        if self._sync_thread is None:
+            return
+
+        self._sync_stop_event.set()
+        self._sync_thread.join(timeout=10)
+        self._sync_thread = None
+        logger.info("Background sync stopped")
+
+    def _background_sync_loop(self):
+        """Background loop that periodically syncs results from VM."""
+        interval_seconds = self.config.sync_interval_minutes * 60
+        sync_count = 0
+
+        while not self._sync_stop_event.wait(timeout=interval_seconds):
+            sync_count += 1
+            logger.info(f"Background sync #{sync_count} starting...")
+            try:
+                self._do_quiet_sync()
+                logger.info(f"Background sync #{sync_count} completed")
+            except Exception as e:
+                logger.warning(f"Background sync #{sync_count} failed: {e}")
+
+    def _do_quiet_sync(self):
+        """Perform a quiet rsync without verbose logging."""
+        if not self._results_dir or not self.vm_ip:
+            return
+
+        for subdir in ["mlruns", "tfruns", "logs"]:
+            try:
+                Path(f"{self._results_dir}/{subdir}").mkdir(parents=True, exist_ok=True)
+                cmd = (
+                    f"rsync -az -e '{SSH_OPTS}' "
+                    f"aclarke@{self.vm_ip}:~/echoes/{subdir}/ "
+                    f"{self._results_dir}/{subdir}/"
+                )
+                subprocess.run(
+                    cmd, shell=True, check=True, capture_output=True, timeout=120
+                )
+            except subprocess.CalledProcessError:
+                pass
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Background sync of {subdir} timed out")
 
     def _get_vm_resources(self) -> dict[str, str]:
         """Get associated resource IDs for the VM before deletion."""
@@ -501,28 +560,60 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
     def vm_context(self):
         """Context manager for VM lifecycle."""
         try:
-            # Register cleanup handlers for unexpected termination
+
             def cleanup_handler(*args):
                 logger.info("Received termination signal, cleaning up VM...")
                 self.cleanup()
+                sys.exit(1)
 
             signal.signal(signal.SIGTERM, cleanup_handler)
             signal.signal(signal.SIGINT, cleanup_handler)
             atexit.register(self.cleanup)
 
-            # Create and yield VM
             self.create_vm()
             yield self
 
         finally:
-            # Always cleanup
             self.cleanup()
+
+
+def cleanup_all_vms(resource_group: str):
+    """Delete all echoes VMs in the resource group."""
+    logger.info(f"Cleaning up all echoes VMs in {resource_group}...")
+    query = "[?starts_with(name, 'echoes-vm')].name"
+    result = subprocess.run(
+        ["az", "vm", "list", "-g", resource_group, "--query", query, "-o", "tsv"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    vms = [v for v in result.stdout.strip().split("\n") if v]
+    if not vms:
+        logger.info("No echoes VMs found")
+        return
+    for vm in vms:
+        logger.info(f"Deleting VM: {vm}")
+        config = VMConfig(resource_group=resource_group, vm_name=vm)
+        runner = AzureGPURunner(config)
+        runner._vm_created = True
+        runner.cleanup()
+
+
+def sync_results_only(vm_ip: str, results_dir: str):
+    """Sync results from an existing VM."""
+    logger.info(f"Syncing results from {vm_ip}")
+    config = VMConfig(resource_group="", vm_name="")
+    runner = AzureGPURunner(config)
+    runner.vm_ip = vm_ip
+    runner.download_results(results_dir)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run ML experiments on Azure VMs")
     parser.add_argument(
-        "experiment_script", help="Path to the experiment script to run"
+        "experiment_script",
+        nargs="?",
+        help="Path to the experiment script to run",
     )
     parser.add_argument(
         "--resource-group", help="Azure resource group (overrides config)"
@@ -533,8 +624,8 @@ def main():
     parser.add_argument("--data-dir", help="Data directory on VM (overrides config)")
     parser.add_argument(
         "--results-dir",
-        default="/mnt/echoes_data/azure_results",
-        help="Local results directory",
+        default="/mnt/echoes_data",
+        help="Local results directory (mlruns/, logs/, tfruns/ subdirs)",
     )
     parser.add_argument(
         "--auto-destroy-hours",
@@ -542,22 +633,52 @@ def main():
         default=4,
         help="Hours after which VM auto-destroys",
     )
+    parser.add_argument(
+        "--sync-only",
+        metavar="VM_IP",
+        help="Only sync results from existing VM at this IP",
+    )
+    parser.add_argument(
+        "--cleanup-vms",
+        action="store_true",
+        help="Delete all echoes VMs in the resource group",
+    )
+    parser.add_argument(
+        "--sync-interval",
+        type=int,
+        default=5,
+        help="Minutes between background syncs (0 to disable)",
+    )
 
     args = parser.parse_args()
 
     setup_logging("INFO")
+
+    if args.cleanup_vms:
+        azure_config = load_azure_config()
+        rg = args.resource_group or azure_config["resource_group"]
+        cleanup_all_vms(rg)
+        return
+
+    if args.sync_only:
+        sync_results_only(args.sync_only, args.results_dir)
+        return
+
+    if not args.experiment_script:
+        parser.error("experiment_script is required unless using --sync-only")
+
     azure_config = load_azure_config()
     resource_group = args.resource_group or azure_config["resource_group"]
     location = args.location or azure_config["location"]
-    # Use local directory on remote VM, not headquarters mount point
     data_dir = args.data_dir or "/home/aclarke/echoes_data"
-
-    vm_name = f"echoes-vm-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     experiment_path = Path(args.experiment_script)
     if not experiment_path.exists():
         logger.error(f"Experiment script not found: {args.experiment_script}")
         sys.exit(1)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    vm_name = f"echoes-vm-{timestamp}"
 
     config = VMConfig(
         resource_group=resource_group,
@@ -566,6 +687,7 @@ def main():
         location=location,
         ssh_key_path=args.ssh_key or _default_ssh_key(),
         auto_destroy_hours=args.auto_destroy_hours,
+        sync_interval_minutes=args.sync_interval,
     )
     runner = AzureGPURunner(config)
 
@@ -573,7 +695,11 @@ def main():
         logger.info(f"VM is ready at {runner.vm_ip}")
         runner.setup_environment(data_dir)
         runner.copy_dataset(data_dir)
-        runner.run_experiment(args.experiment_script, data_dir)
+        runner.start_background_sync(args.results_dir)
+        try:
+            runner.run_experiment(args.experiment_script, data_dir)
+        finally:
+            runner.stop_background_sync()
         runner.download_results(args.results_dir)
 
 
