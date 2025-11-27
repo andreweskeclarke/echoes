@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 import time
+from datetime import datetime
 
 import mlflow
 import mlflow.pytorch
@@ -135,8 +136,8 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
 def main():
     setup_logging("INFO")
 
-    # Set MLflow experiment
-    mlflow.set_experiment("UCF101_RNN_vs_ESN")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mlflow.set_experiment(f"UCF101_RNN_vs_ESN_{timestamp}")
 
     # Dataset paths
     data_dir = "/mnt/echoes_data/ucf101"

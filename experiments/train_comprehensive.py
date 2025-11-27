@@ -217,7 +217,8 @@ def train_model(model, train_loader, val_loader, **kwargs):
 def main():
     setup_logging("INFO")
 
-    experiment_name = "UCF101_Architecture_Comparison"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    experiment_name = f"UCF101_Architecture_Comparison_{timestamp}"
     mlflow.set_experiment(experiment_name)
 
     data_dir = "/mnt/echoes_data/ucf101"
