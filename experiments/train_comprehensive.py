@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 from data.logging_config import get_logger, setup_logging
 from experiments.dataset import UCF101Dataset
-from models.simple_models import DeepESN, DeepRNN, SimpleESN, SimpleRNN
+from models.factory import create_model_from_config
 
 logger = get_logger(__name__)
 
@@ -274,38 +274,7 @@ def main():
     results = {}
 
     for config in model_configs:
-        # Create model based on configuration
-        if config["type"] == "RNN":
-            model = SimpleRNN(
-                input_size=input_size,
-                hidden_size=config["hidden_size"],
-                num_classes=num_classes,
-                num_layers=config["num_layers"],
-            )
-            model_name = f"RNN_h{config['hidden_size']}_L{config['num_layers']}"
-        elif config["type"] == "DeepRNN":
-            model = DeepRNN(
-                input_size=input_size,
-                hidden_size=config["hidden_size"],
-                num_layers=config["num_layers"],
-                num_classes=num_classes,
-            )
-            model_name = f"DeepRNN_h{config['hidden_size']}_L{config['num_layers']}"
-        elif config["type"] == "ESN":
-            model = SimpleESN(
-                input_size=input_size,
-                reservoir_size=config["reservoir_size"],
-                num_classes=num_classes,
-            )
-            model_name = f"ESN_r{config['reservoir_size']}"
-        else:  # DeepESN
-            model = DeepESN(
-                input_size=input_size,
-                reservoir_size=config["reservoir_size"],
-                num_layers=config["num_layers"],
-                num_classes=num_classes,
-            )
-            model_name = f"DeepESN_r{config['reservoir_size']}_L{config['num_layers']}"
+        model, model_name = create_model_from_config(config, input_size, num_classes)
 
         with mlflow.start_run(run_name=f"{model_name}_experiment"):
             logger.info(f"\n{'=' * 60}")
