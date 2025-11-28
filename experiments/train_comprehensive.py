@@ -29,6 +29,7 @@ class TrainingState:
     device: torch.device
     criterion: nn.Module
     optimizer: torch.optim.Optimizer
+    scheduler: torch.optim.lr_scheduler.LRScheduler
     train_loader: DataLoader
     val_loader: DataLoader
     writer: SummaryWriter
@@ -150,6 +151,7 @@ def train_model(model, train_loader, val_loader, **kwargs):
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
 
     param_counts = count_parameters(model)
     writer = setup_tensorboard_logging(model, experiment_name, param_counts)
@@ -159,6 +161,7 @@ def train_model(model, train_loader, val_loader, **kwargs):
         device=device,
         criterion=criterion,
         optimizer=optimizer,
+        scheduler=scheduler,
         train_loader=train_loader,
         val_loader=val_loader,
         writer=writer,
@@ -186,10 +189,16 @@ def train_model(model, train_loader, val_loader, **kwargs):
         state.log_train_epoch(epoch, avg_train_loss, train_acc)
         state.log_validation_epoch(epoch, avg_val_loss, val_acc)
 
+        current_lr = state.scheduler.get_last_lr()[0]
+        mlflow.log_metric("learning_rate", current_lr, step=epoch)
+        state.writer.add_scalar("LearningRate", current_lr, epoch)
+
         logger.info(
-            f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, "
-            f"Train Acc: {train_acc:.2f}%, Val Acc: {val_acc:.2f}%"
+            f"Epoch {epoch + 1}: Loss: {avg_train_loss:.4f}, "
+            f"Train: {train_acc:.2f}%, Val: {val_acc:.2f}%, LR: {current_lr:.6f}"
         )
+
+        state.scheduler.step()
 
     total_time = time.time() - start_time
     logger.info(f"Training completed in {total_time:.2f}s")
@@ -260,16 +269,16 @@ def main():
     num_classes = len(train_dataset.class_to_idx)
 
     model_configs = [
-        {"type": "RNN", "hidden_size": 256, "num_layers": 1},
-        {"type": "RNN", "hidden_size": 512, "num_layers": 1},
-        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2},
-        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3},
-        {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2},
-        {"type": "ESN", "reservoir_size": 2000},
-        {"type": "ESN", "reservoir_size": 5000},
-        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2},
-        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 3},
-        {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2},
+        {"type": "RNN", "hidden_size": 256, "num_layers": 1, "lr": 0.01},
+        {"type": "RNN", "hidden_size": 512, "num_layers": 1, "lr": 0.01},
+        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2, "lr": 0.01},
+        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3, "lr": 0.01},
+        {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2, "lr": 0.01},
+        {"type": "ESN", "reservoir_size": 2000, "lr": 0.01},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.01},
+        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.01},
+        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 3, "lr": 0.01},
+        {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.01},
     ]
 
     results = {}
@@ -286,8 +295,8 @@ def main():
                 model,
                 train_loader,
                 val_loader,
-                num_epochs=50,
-                lr=0.001,
+                num_epochs=25,
+                lr=config.get("lr", 0.01),
                 experiment_name=experiment_name,
             )
             results[model_name] = result
