@@ -21,10 +21,7 @@ When working on any task, follow this workflow:
 3. **Read Related Docs**: Review relevant documentation in `docs/` to understand context and requirements
 4. **Complete Task**: Implement the task
 5. **Run Checks**: Execute all quality checks:
-   - `ruff check --fix .` (auto-fix linting issues)
-   - `ruff format .` (format code)
-   - `pre-commit run --all-files` (run pre-commit hooks)
-   - `pytest tests/` (run unit tests)
+   - `make check`
 6. **Review Documentation**: Check if docs in `docs/` need updating to reflect changes
 7. **Commit and Push**: Commit changes and push to main
 8. **Close Linear Task**: Move the Linear task to "Done"
