@@ -36,6 +36,8 @@ class VMConfig:
     vnet_name: str = "headquarters-vnet"
     subnet_name: str = "default"
     sync_interval_minutes: int = 5
+    project_name: str = "echoes"
+    conda_env_name: str = "echoes"
 
 
 class AzureGPURunner:
@@ -62,6 +64,11 @@ class AzureGPURunner:
                 raise RuntimeError("VM IP not set - create or connect to a VM first")
             self._ssh = self._ssh_client_factory(self.vm_ip, runner=self._runner)
         return self._ssh
+
+    @property
+    def remote_project_dir(self) -> str:
+        """Remote directory where project code is deployed."""
+        return f"~/{self.config.project_name}"
 
     def _run_az_command(
         self, cmd: list[str], capture_output: bool = True
@@ -162,7 +169,7 @@ class AzureGPURunner:
 
         result = self.ssh.rsync_to_remote(
             f"{Path(__file__).parent.parent}/",
-            "~/echoes/",
+            f"{self.remote_project_dir}/",
             excludes=[".git", "__pycache__", "*.pyc", ".pytest_cache"],
         )
         if not result.success:
@@ -173,16 +180,17 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 (sleep {self.config.auto_destroy_hours * 3600} && sudo shutdown -h now) &
 """
 
+        proj_dir = self.remote_project_dir
         setup_commands = [
             f"echo '{auto_shutdown_script}' > ~/auto_shutdown.sh",
             "chmod +x ~/auto_shutdown.sh",
             "nohup ~/auto_shutdown.sh > ~/auto_shutdown.log 2>&1 &",
-            "cd ~/echoes",
+            f"cd {proj_dir}",
             f"mkdir -p {data_dir}/logs {data_dir}/mlruns {data_dir}/tfruns",
-            "rm -rf ~/echoes/logs ~/echoes/mlruns ~/echoes/tfruns",
-            f"ln -sf {data_dir}/logs ~/echoes/logs",
-            f"ln -sf {data_dir}/mlruns ~/echoes/mlruns",
-            f"ln -sf {data_dir}/tfruns ~/echoes/tfruns",
+            f"rm -rf {proj_dir}/logs {proj_dir}/mlruns {proj_dir}/tfruns",
+            f"ln -sf {data_dir}/logs {proj_dir}/logs",
+            f"ln -sf {data_dir}/mlruns {proj_dir}/mlruns",
+            f"ln -sf {data_dir}/tfruns {proj_dir}/tfruns",
             "sudo apt-get update",
             "sudo apt-get install -y ubuntu-drivers-common",
             "sudo ubuntu-drivers install --gpgpu",
@@ -195,7 +203,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             "bash miniforge.sh -b -p $HOME/miniforge",
             "rm miniforge.sh",
             (
-                "cd ~/echoes && export PATH=$HOME/miniforge/bin:$PATH && "
+                f"cd {proj_dir} && export PATH=$HOME/miniforge/bin:$PATH && "
                 "mamba env create -f environment.yml -y 2>&1"
             ),
         ]
@@ -253,13 +261,14 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         logger.info(f"Running experiment: {experiment_script}")
 
         script_name = Path(experiment_script).stem
-        log_file = f"~/echoes/logs/{script_name}_{self.config.vm_name}.log"
+        proj_dir = self.remote_project_dir
+        log_file = f"{proj_dir}/logs/{script_name}_{self.config.vm_name}.log"
 
         experiment_cmd = f"""
-        cd ~/echoes &&
+        cd {proj_dir} &&
         export PATH=$HOME/miniforge/bin:$PATH &&
         source $HOME/miniforge/etc/profile.d/conda.sh &&
-        conda activate echoes &&
+        conda activate {self.config.conda_env_name} &&
         export CUDA_VISIBLE_DEVICES=0 &&
         sed -i 's|/mnt/echoes_data|{data_dir}|g' {experiment_script} &&
         python {experiment_script} 2>&1 | tee {log_file}
@@ -285,7 +294,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             try:
                 Path(f"{local_results_dir}/{subdir}").mkdir(parents=True, exist_ok=True)
                 result = self.ssh.rsync_from_remote(
-                    f"~/echoes/{subdir}/",
+                    f"{self.remote_project_dir}/{subdir}/",
                     f"{local_results_dir}/{subdir}/",
                 )
                 if result.success:
@@ -346,7 +355,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             try:
                 Path(f"{self._results_dir}/{subdir}").mkdir(parents=True, exist_ok=True)
                 self.ssh.rsync_from_remote(
-                    f"~/echoes/{subdir}/",
+                    f"{self.remote_project_dir}/{subdir}/",
                     f"{self._results_dir}/{subdir}/",
                     timeout=120,
                 )
@@ -491,24 +500,30 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             self.cleanup()
 
 
-def cleanup_all_vms(resource_group: str, runner: CommandRunner | None = None):
-    """Delete all echoes VMs in the resource group."""
+def cleanup_all_vms(
+    resource_group: str,
+    project_name: str = "echoes",
+    runner: CommandRunner | None = None,
+):
+    """Delete all project VMs in the resource group."""
     runner = runner or SubprocessRunner()
-    logger.info(f"Cleaning up all echoes VMs in {resource_group}...")
+    logger.info(f"Cleaning up all {project_name} VMs in {resource_group}...")
 
-    query = "[?starts_with(name, 'echoes-vm')].name"
+    query = f"[?starts_with(name, '{project_name}-vm')].name"
     result = runner.run(
         ["az", "vm", "list", "-g", resource_group, "--query", query, "-o", "tsv"],
     )
     vms = [v for v in result.stdout.strip().split("\n") if v]
 
     if not vms:
-        logger.info("No echoes VMs found")
+        logger.info(f"No {project_name} VMs found")
         return
 
     for vm in vms:
         logger.info(f"Deleting VM: {vm}")
-        config = VMConfig(resource_group=resource_group, vm_name=vm)
+        config = VMConfig(
+            resource_group=resource_group, vm_name=vm, project_name=project_name
+        )
         vm_runner = AzureGPURunner(config, runner=runner)
         vm_runner._vm_created = True
         vm_runner.cleanup()

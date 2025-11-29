@@ -165,7 +165,7 @@ def main():
     if args.cleanup_vms:
         azure_config = load_azure_config()
         rg = args.resource_group or azure_config["resource_group"]
-        cleanup_all_vms(rg)
+        cleanup_all_vms(rg, project_name="echoes")
         return
 
     if args.sync_only:
@@ -185,9 +185,10 @@ def main():
     resource_group = args.resource_group or azure_config.get("resource_group", "")
     location = args.location or azure_config.get("location", "centralus")
     data_dir = args.data_dir or "/home/aclarke/echoes_data"
+    project_name = "echoes"
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    vm_name = f"echoes-vm-{timestamp}"
+    vm_name = f"{project_name}-vm-{timestamp}"
 
     config = VMConfig(
         resource_group=resource_group,
@@ -197,6 +198,7 @@ def main():
         ssh_key_path=args.ssh_key or _default_ssh_key(),
         auto_destroy_hours=args.auto_destroy_hours,
         sync_interval_minutes=args.sync_interval,
+        project_name=project_name,
     )
     runner = AzureGPURunner(config)
 
