@@ -162,6 +162,59 @@ class AzureGPURunner:
 
         return self.vm_ip
 
+    def _setup_gpu_drivers(self):
+        """Install NVIDIA drivers and verify nvidia-smi is available."""
+        logger.info("GPU detected, installing NVIDIA drivers...")
+        gpu_commands = [
+            "sudo apt-get update",
+            "sudo apt-get install -y ubuntu-drivers-common",
+            "sudo ubuntu-drivers install",
+        ]
+
+        for cmd in gpu_commands:
+            result = self.ssh.run_command(cmd, capture_output=False)
+            if not result.success:
+                raise RuntimeError(f"GPU driver installation failed at: {cmd}")
+
+        logger.info("NVIDIA drivers installed, rebooting VM...")
+        self.ssh.run_command("sudo reboot", capture_output=False)
+
+        logger.info("Waiting for VM to reboot...")
+        time.sleep(30)
+
+        if not self.ssh.test_connection(max_retries=10, retry_delay=30):
+            raise RuntimeError("Could not reconnect after reboot")
+
+        logger.info("VM rebooted successfully")
+
+        logger.info("Detecting installed NVIDIA driver version...")
+        driver_check = self.ssh.run_command(
+            "dpkg -l | grep nvidia-driver- | awk '{print $2}' | head -1"
+        )
+        if driver_check.success and driver_check.stdout.strip():
+            driver_pkg = driver_check.stdout.strip()
+            version = driver_pkg.replace("nvidia-driver-", "").split("-")[0]
+            logger.info(f"Detected driver version: {version}")
+
+            logger.info(f"Installing nvidia-utils-{version} for nvidia-smi...")
+            utils_result = self.ssh.run_command(
+                f"sudo apt-get install -y nvidia-utils-{version}", capture_output=False
+            )
+            if not utils_result.success:
+                logger.warning(
+                    f"Failed to install nvidia-utils-{version}, nvidia-smi may not work"
+                )
+        else:
+            logger.warning("Could not detect NVIDIA driver version")
+
+        logger.info("Verifying nvidia-smi...")
+        smi_result = self.ssh.run_command("nvidia-smi", capture_output=True)
+        if smi_result.success:
+            logger.info("nvidia-smi verification successful")
+            logger.info(smi_result.stdout)
+        else:
+            logger.warning("nvidia-smi not available after installation")
+
     def setup_environment(self, data_dir: str):
         """Set up the conda environment and codebase on the VM."""
         logger.info("Setting up environment on VM...")
@@ -181,7 +234,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 """
 
         proj_dir = self.remote_project_dir
-        setup_commands = [
+        base_setup_commands = [
             f"echo '{auto_shutdown_script}' > ~/auto_shutdown.sh",
             "chmod +x ~/auto_shutdown.sh",
             "nohup ~/auto_shutdown.sh > ~/auto_shutdown.log 2>&1 &",
@@ -191,9 +244,21 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             f"ln -sf {data_dir}/logs {proj_dir}/logs",
             f"ln -sf {data_dir}/mlruns {proj_dir}/mlruns",
             f"ln -sf {data_dir}/tfruns {proj_dir}/tfruns",
-            "sudo apt-get update",
-            "sudo apt-get install -y ubuntu-drivers-common",
-            "sudo ubuntu-drivers install --gpgpu",
+        ]
+
+        for cmd in base_setup_commands:
+            result = self.ssh.run_command(cmd, capture_output=False)
+            if not result.success:
+                raise RuntimeError(f"Environment setup failed at command: {cmd}")
+
+        logger.info("Checking for GPU...")
+        gpu_check = self.ssh.run_command("lspci | grep -i nvidia")
+        if gpu_check.success:
+            self._setup_gpu_drivers()
+        else:
+            logger.info("No GPU detected, skipping driver installation")
+
+        conda_setup_commands = [
             (
                 "wget "
                 "https://github.com/conda-forge/miniforge/releases/latest/download/"
@@ -208,7 +273,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             ),
         ]
 
-        for cmd in setup_commands:
+        for cmd in conda_setup_commands:
             result = self.ssh.run_command(cmd, capture_output=False)
             if not result.success:
                 raise RuntimeError(f"Environment setup failed at command: {cmd}")
