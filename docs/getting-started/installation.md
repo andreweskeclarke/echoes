@@ -18,11 +18,12 @@ git clone https://github.com/aclarke/echoes.git
 cd echoes
 ```
 
-### 2. Create Conda Environment
+### 2. Create Environment
 
 ```bash
-conda env create -f environment.yml
+conda create -n echoes python=3.11 -y
 conda activate echoes
+pip install -r requirements.txt
 ```
 
 This installs all dependencies including PyTorch, torchvision, MLflow, TensorBoard, and project utilities.
@@ -137,8 +138,9 @@ ping github.com
 ```bash
 # Recreate environment from scratch
 conda env remove --name echoes
-conda env create -f environment.yml
+conda create -n echoes python=3.11 -y
 conda activate echoes
+pip install -r requirements.txt
 ```
 
 ## Next Steps

@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environment Setup
 
-This project uses conda for environment management. Always use the conda environment:
+This project uses conda for Python version management and pip for packages:
 
 ```bash
-# Create and activate the environment
-conda env create -f environment.yml
+conda create -n echoes python=3.11 -y
 conda activate echoes
+pip install -r requirements.txt
 ```
 
 ## Task Workflow

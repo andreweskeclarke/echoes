@@ -14,12 +14,11 @@ help:
 setup:
 	@echo "Setting up Echoes development environment..."
 	@if ! conda env list | grep -q "$(CONDA_ENV)"; then \
-		echo "Creating conda environment from environment.yml..."; \
-		conda env create -f environment.yml; \
-	else \
-		echo "Conda environment '$(CONDA_ENV)' already exists. Updating..."; \
-		conda env update -f environment.yml --prune; \
+		echo "Creating conda environment..."; \
+		conda create -n $(CONDA_ENV) python=3.11 -y; \
 	fi
+	@echo "Installing dependencies with pip..."
+	@$(CONDA_ACTIVATE) && pip install -r requirements.txt
 	@echo "Setup complete! Run 'make check' to verify installation."
 
 check:

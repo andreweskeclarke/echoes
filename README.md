@@ -24,19 +24,17 @@ echoes/
 │   └── utils.py      # Shared model utilities
 ├── experiments/       # Training and evaluation scripts
 ├── notebooks/        # Jupyter notebooks for analysis
-├── environment.yml   # Conda environment specification
+├── requirements.txt  # Python dependencies
 └── README.md        # This file
 ```
 
 ## Setup
 
-1. Create and activate the Conda environment:
+1. Create and activate the environment:
 ```bash
-# Create the environment
-conda env create -f environment.yml
-
-# Activate the environment
+conda create -n echoes python=3.11 -y
 conda activate echoes
+pip install -r requirements.txt
 ```
 
 2. Verify the installation:

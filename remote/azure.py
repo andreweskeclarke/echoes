@@ -268,8 +268,14 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             "bash miniforge.sh -b -p $HOME/miniforge",
             "rm miniforge.sh",
             (
+                f"export PATH=$HOME/miniforge/bin:$PATH && "
+                f"conda create -n {self.config.conda_env_name} python=3.11 -y"
+            ),
+            (
                 f"cd {proj_dir} && export PATH=$HOME/miniforge/bin:$PATH && "
-                "mamba env create -f environment.yml -y 2>&1"
+                f"source $HOME/miniforge/etc/profile.d/conda.sh && "
+                f"conda activate {self.config.conda_env_name} && "
+                "pip install -r requirements.txt"
             ),
         ]
 
