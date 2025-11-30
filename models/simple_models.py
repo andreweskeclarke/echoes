@@ -52,6 +52,47 @@ class SimpleESN(nn.Module):
         return self.W_readout(h)
 
 
+class SimpleESNWithNonLinearReadout(nn.Module):
+    def __init__(
+        self,
+        input_size=512,
+        reservoir_size=1000,
+        num_classes=101,
+        spectral_radius=0.9,
+        hidden_readout_size=256,
+    ):
+        super().__init__()
+        self.reservoir_size = reservoir_size
+
+        self.W_in = nn.Linear(input_size, reservoir_size, bias=False)
+        self.W_res = nn.Parameter(
+            torch.randn(reservoir_size, reservoir_size), requires_grad=False
+        )
+
+        for param in self.W_in.parameters():
+            param.requires_grad = False
+
+        with torch.no_grad():
+            eigenvals = torch.linalg.eigvals(self.W_res).real
+            self.W_res *= spectral_radius / torch.max(eigenvals)
+
+        self.W_readout = nn.Sequential(
+            nn.Linear(reservoir_size, hidden_readout_size),
+            nn.ReLU(),
+            nn.Linear(hidden_readout_size, num_classes),
+        )
+
+    def forward(self, x):
+        batch_size, seq_len, _ = x.shape
+        h = torch.zeros(batch_size, self.reservoir_size, device=x.device)
+
+        for t in range(seq_len):
+            u = self.W_in(x[:, t, :])
+            h = torch.tanh(u + h @ self.W_res)
+
+        return self.W_readout(h)
+
+
 class DeepESN(nn.Module):
     def __init__(
         self,

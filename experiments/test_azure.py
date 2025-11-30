@@ -52,19 +52,24 @@ def setup_dataloaders(data_dir):
 
 
 def run_training_loop(state):
+    initial_val_loss, initial_val_acc = run_validation_epoch(state, 0)
+    mlflow.log_metric("val_accuracy", initial_val_acc, step=0)
+    state.writer.add_scalar("Accuracy/Validation", initial_val_acc, 0)
+    logger.info(f"Initial (untrained): Val Acc: {initial_val_acc:.2f}%")
+
     for epoch in range(2):
         train_loss, train_acc = run_training_epoch(state, epoch)
         val_loss, val_acc = run_validation_epoch(state, epoch)
 
         avg_train_loss = train_loss / len(state.train_loader)
 
-        mlflow.log_metric("train_loss", avg_train_loss, step=epoch)
-        mlflow.log_metric("train_accuracy", train_acc, step=epoch)
-        mlflow.log_metric("val_accuracy", val_acc, step=epoch)
+        mlflow.log_metric("train_loss", avg_train_loss, step=epoch + 1)
+        mlflow.log_metric("train_accuracy", train_acc, step=epoch + 1)
+        mlflow.log_metric("val_accuracy", val_acc, step=epoch + 1)
 
-        state.writer.add_scalar("Loss/Train", avg_train_loss, epoch)
-        state.writer.add_scalar("Accuracy/Train", train_acc, epoch)
-        state.writer.add_scalar("Accuracy/Validation", val_acc, epoch)
+        state.writer.add_scalar("Loss/Train", avg_train_loss, epoch + 1)
+        state.writer.add_scalar("Accuracy/Train", train_acc, epoch + 1)
+        state.writer.add_scalar("Accuracy/Validation", val_acc, epoch + 1)
 
         logger.info(
             f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, "

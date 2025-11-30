@@ -1,4 +1,10 @@
-from models.simple_models import DeepESN, DeepRNN, SimpleESN, SimpleRNN
+from models.simple_models import (
+    DeepESN,
+    DeepRNN,
+    SimpleESN,
+    SimpleESNWithNonLinearReadout,
+    SimpleRNN,
+)
 
 
 def create_model_from_config(config: dict, input_size: int, num_classes: int):
@@ -29,6 +35,16 @@ def create_model_from_config(config: dict, input_size: int, num_classes: int):
             num_classes=num_classes,
         )
         name = f"ESN_r{config['reservoir_size']}"
+
+    elif model_type == "ESNNonLinear":
+        hidden_readout_size = config.get("hidden_readout_size", 256)
+        model = SimpleESNWithNonLinearReadout(
+            input_size=input_size,
+            reservoir_size=config["reservoir_size"],
+            num_classes=num_classes,
+            hidden_readout_size=hidden_readout_size,
+        )
+        name = f"ESNNonLinear_r{config['reservoir_size']}_h{hidden_readout_size}"
 
     elif model_type == "DeepESN":
         model = DeepESN(

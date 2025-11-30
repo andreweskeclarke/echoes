@@ -150,7 +150,12 @@ def train_model(model, train_loader, val_loader, **kwargs):
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=lr,
+        weight_decay=0.05,
+        betas=(0.9, 0.999),
+    )
 
     warmup_epochs = max(1, num_epochs // 10)
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -187,6 +192,17 @@ def train_model(model, train_loader, val_loader, **kwargs):
     logger.info(f"Model: {model.__class__.__name__}")
     logger.info(f"Trainable parameters: {state.param_counts['trainable_params']:,}")
     logger.info(f"Total parameters: {state.param_counts['total_params']:,}")
+
+    initial_val_loss, initial_val_acc = validate_comprehensive_epoch(state)
+    avg_initial_val_loss = (
+        initial_val_loss / len(val_loader) if len(val_loader) > 0 else 0.0
+    )
+    state.log_validation_epoch(0, avg_initial_val_loss, initial_val_acc)
+    logger.info(
+        f"Initial (untrained): Val Loss: {avg_initial_val_loss:.4f}, "
+        f"Val Acc: {initial_val_acc:.2f}%"
+    )
+
     start_time = time.time()
 
     for epoch in range(num_epochs):
@@ -198,12 +214,12 @@ def train_model(model, train_loader, val_loader, **kwargs):
         )
         avg_val_loss = val_loss / len(val_loader) if len(val_loader) > 0 else 0.0
 
-        state.log_train_epoch(epoch, avg_train_loss, train_acc)
-        state.log_validation_epoch(epoch, avg_val_loss, val_acc)
+        state.log_train_epoch(epoch + 1, avg_train_loss, train_acc)
+        state.log_validation_epoch(epoch + 1, avg_val_loss, val_acc)
 
         current_lr = state.scheduler.get_last_lr()[0]
-        mlflow.log_metric("learning_rate", current_lr, step=epoch)
-        state.writer.add_scalar("LearningRate", current_lr, epoch)
+        mlflow.log_metric("learning_rate", current_lr, step=epoch + 1)
+        state.writer.add_scalar("LearningRate", current_lr, epoch + 1)
 
         logger.info(
             f"Epoch {epoch + 1}: Loss: {avg_train_loss:.4f}, "
@@ -286,14 +302,26 @@ def main():
         # {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2, "lr": 0.01},
         # {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3, "lr": 0.01},
         # {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2, "lr": 0.01},
-        {"type": "ESN", "reservoir_size": 2000, "lr": 0.01},
-        {"type": "ESN", "reservoir_size": 2000, "lr": 0.05},
+        # {"type": "ESN", "reservoir_size": 2000, "lr": 0.01},
+        # {"type": "ESN", "reservoir_size": 2000, "lr": 0.05},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0001},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.0001},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0005},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.0005},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.001},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.001},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.005},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.005},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.01},
         {"type": "ESN", "reservoir_size": 5000, "lr": 0.01},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.05},
         {"type": "ESN", "reservoir_size": 5000, "lr": 0.05},
-        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.01},
-        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.05},
-        {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.01},
-        {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.05},
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.1},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.1},
+        # {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.01},
+        # {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.05},
+        # {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.01},
+        # {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.05},
     ]
 
     results = {}

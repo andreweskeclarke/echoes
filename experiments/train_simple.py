@@ -102,15 +102,20 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     logger.info(f"Model: {model.__class__.__name__}")
 
     state = TrainingState(model, device, criterion, optimizer, train_loader, val_loader)
+
+    initial_val_loss, initial_val_acc = validate_epoch(state)
+    mlflow.log_metric("val_accuracy", initial_val_acc, step=0)
+    logger.info(f"Initial (untrained): Val Acc: {initial_val_acc:.2f}%")
+
     start_time = time.time()
 
     for epoch in range(num_epochs):
         train_loss, train_acc = train_epoch(state, epoch)
         val_loss, val_acc = validate_epoch(state)
 
-        mlflow.log_metric("train_loss", train_loss / len(train_loader), step=epoch)
-        mlflow.log_metric("train_accuracy", train_acc, step=epoch)
-        mlflow.log_metric("val_accuracy", val_acc, step=epoch)
+        mlflow.log_metric("train_loss", train_loss / len(train_loader), step=epoch + 1)
+        mlflow.log_metric("train_accuracy", train_acc, step=epoch + 1)
+        mlflow.log_metric("val_accuracy", val_acc, step=epoch + 1)
 
         logger.info(
             f"Epoch {epoch + 1}: Train Loss: {train_loss / len(train_loader):.4f}, "
