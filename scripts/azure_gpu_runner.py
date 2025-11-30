@@ -114,7 +114,7 @@ def main():
     )
     parser.add_argument(
         "--results-dir",
-        default="/mnt/echoes_data/azure_results",
+        default="/mnt/echoes_data",
         help="Local results directory for downloading mlruns/, logs/, tfruns/",
     )
     parser.add_argument(
@@ -184,7 +184,7 @@ def main():
     azure_config = load_azure_config() if not use_existing_vm or args.vm_name else {}
     resource_group = args.resource_group or azure_config.get("resource_group", "")
     location = args.location or azure_config.get("location", "centralus")
-    data_dir = args.data_dir or "/home/aclarke/echoes_data"
+    data_dir = args.data_dir or "/mnt/echoes_data"
     project_name = "echoes"
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")

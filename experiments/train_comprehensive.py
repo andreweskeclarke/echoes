@@ -150,8 +150,20 @@ def train_model(model, train_loader, val_loader, **kwargs):
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+
+    warmup_epochs = max(1, num_epochs // 10)
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.01, end_factor=1.0, total_iters=warmup_epochs
+    )
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=num_epochs - warmup_epochs
+    )
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[warmup_epochs],
+    )
 
     param_counts = count_parameters(model)
     writer = setup_tensorboard_logging(model, experiment_name, param_counts)
@@ -269,16 +281,19 @@ def main():
     num_classes = len(train_dataset.class_to_idx)
 
     model_configs = [
-        {"type": "RNN", "hidden_size": 256, "num_layers": 1, "lr": 0.01},
-        {"type": "RNN", "hidden_size": 512, "num_layers": 1, "lr": 0.01},
-        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2, "lr": 0.01},
-        {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3, "lr": 0.01},
-        {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2, "lr": 0.01},
+        # {"type": "RNN", "hidden_size": 256, "num_layers": 1, "lr": 0.01},
+        # {"type": "RNN", "hidden_size": 512, "num_layers": 1, "lr": 0.01},
+        # {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2, "lr": 0.01},
+        # {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3, "lr": 0.01},
+        # {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2, "lr": 0.01},
         {"type": "ESN", "reservoir_size": 2000, "lr": 0.01},
+        {"type": "ESN", "reservoir_size": 2000, "lr": 0.05},
         {"type": "ESN", "reservoir_size": 5000, "lr": 0.01},
+        {"type": "ESN", "reservoir_size": 5000, "lr": 0.05},
         {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.01},
-        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 3, "lr": 0.01},
+        {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.05},
         {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.01},
+        {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.05},
     ]
 
     results = {}

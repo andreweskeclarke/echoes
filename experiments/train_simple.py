@@ -84,7 +84,7 @@ def train_model(model, train_loader, val_loader, num_epochs=5, lr=0.001):
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
     mlflow.log_param("model_type", model.__class__.__name__)
     mlflow.log_param("learning_rate", lr)

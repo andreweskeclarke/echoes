@@ -134,7 +134,7 @@ class SshClient:
         timeout: int | None = None,
     ) -> CommandResult:
         """Rsync files from remote host to local."""
-        cmd = ["rsync", "-az", "-e", f"ssh {SSH_OPTS}"]
+        cmd = ["rsync", "-azL", "-e", f"ssh {SSH_OPTS}"]
 
         if show_progress:
             cmd.append("--info=progress2")

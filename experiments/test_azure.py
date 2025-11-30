@@ -139,7 +139,7 @@ def main():
     )
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
 
     writer = SummaryWriter("tfruns/Azure_Test_ESN")
 

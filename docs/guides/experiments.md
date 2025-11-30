@@ -99,7 +99,7 @@ def main():
         )
 
         # Optimizer and loss
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=params["learning_rate"],
         )

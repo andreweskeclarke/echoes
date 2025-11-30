@@ -239,7 +239,8 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
             "chmod +x ~/auto_shutdown.sh",
             "nohup ~/auto_shutdown.sh > ~/auto_shutdown.log 2>&1 &",
             f"cd {proj_dir}",
-            f"mkdir -p {data_dir}/logs {data_dir}/mlruns {data_dir}/tfruns",
+            f"sudo mkdir -p {data_dir}/logs {data_dir}/mlruns {data_dir}/tfruns",
+            f"sudo chown -R $(whoami):$(whoami) {data_dir}",
             f"rm -rf {proj_dir}/logs {proj_dir}/mlruns {proj_dir}/tfruns",
             f"ln -sf {data_dir}/logs {proj_dir}/logs",
             f"ln -sf {data_dir}/mlruns {proj_dir}/mlruns",
@@ -265,18 +266,19 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
                 "Miniforge3-Linux-x86_64.sh "
                 "-O miniforge.sh"
             ),
-            "bash miniforge.sh -b -p $HOME/miniforge",
+            "rm -rf ~/miniforge && bash miniforge.sh -b -p ~/miniforge",
             "rm miniforge.sh",
             (
-                f"export PATH=$HOME/miniforge/bin:$PATH && "
+                f"export PATH=~/miniforge/bin:$PATH && "
                 f"conda create -n {self.config.conda_env_name} python=3.11 -y"
             ),
             (
-                f"cd {proj_dir} && export PATH=$HOME/miniforge/bin:$PATH && "
-                f"source $HOME/miniforge/etc/profile.d/conda.sh && "
+                f"cd {proj_dir} && export PATH=~/miniforge/bin:$PATH && "
+                f"source ~/miniforge/etc/profile.d/conda.sh && "
                 f"conda activate {self.config.conda_env_name} && "
-                "pip install -r requirements.txt"
+                "pip install --no-cache-dir -r requirements.txt"
             ),
+            "rm -rf ~/miniforge/pkgs/*",
         ]
 
         for cmd in conda_setup_commands:
@@ -287,12 +289,14 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         logger.info("Environment setup completed")
 
     def copy_dataset(
-        self, data_dir: str = "/tmp/echoes_data", source_path: str = "/mnt/echoes_data"
+        self, data_dir: str = "/mnt/echoes_data", source_path: str = "/mnt/echoes_data"
     ):
         """Copy UCF101 dataset from headquarters to remote VM via push-based rsync."""
         logger.info(f"Copying dataset from {source_path} to {self.vm_ip}:{data_dir}...")
 
-        result = self.ssh.run_command(f"mkdir -p {data_dir}")
+        result = self.ssh.run_command(
+            f"sudo mkdir -p {data_dir} && sudo chown $(whoami):$(whoami) {data_dir}"
+        )
         if not result.success:
             raise RuntimeError(f"Failed to create directory {data_dir} on remote VM")
 
@@ -326,7 +330,7 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
         return result.stdout.strip()
 
     def run_experiment(
-        self, experiment_script: str, data_dir: str = "/tmp/echoes_data"
+        self, experiment_script: str, data_dir: str = "/mnt/echoes_data"
     ) -> dict[str, Any]:
         """Run the experiment script on the VM."""
         logger.info(f"Running experiment: {experiment_script}")
@@ -337,8 +341,8 @@ echo "Setting up auto-shutdown in {self.config.auto_destroy_hours} hours..."
 
         experiment_cmd = f"""
         cd {proj_dir} &&
-        export PATH=$HOME/miniforge/bin:$PATH &&
-        source $HOME/miniforge/etc/profile.d/conda.sh &&
+        export PATH=~/miniforge/bin:$PATH &&
+        source ~/miniforge/etc/profile.d/conda.sh &&
         conda activate {self.config.conda_env_name} &&
         export CUDA_VISIBLE_DEVICES=0 &&
         sed -i 's|/mnt/echoes_data|{data_dir}|g' {experiment_script} &&
