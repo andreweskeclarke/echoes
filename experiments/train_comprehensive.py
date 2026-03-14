@@ -35,6 +35,7 @@ class TrainingState:
     writer: SummaryWriter
     learning_rate: float = 0.001
     num_epochs: int = 10
+    weight_decay: float = 0.05
     param_counts: dict = None
 
     def __post_init__(self):
@@ -45,6 +46,7 @@ class TrainingState:
         mlflow.log_param("model_type", self.model.__class__.__name__)
         mlflow.log_param("learning_rate", self.learning_rate)
         mlflow.log_param("num_epochs", self.num_epochs)
+        mlflow.log_param("weight_decay", self.weight_decay)
         mlflow.log_param("device", str(self.device))
         mlflow.log_param("train_samples", len(self.train_loader.dataset))
         mlflow.log_param("val_samples", len(self.val_loader.dataset))
@@ -149,11 +151,12 @@ def train_model(model, train_loader, val_loader, **kwargs):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
+    weight_decay = kwargs.get("weight_decay", 0.05)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=lr,
-        weight_decay=0.05,
+        weight_decay=weight_decay,
         betas=(0.9, 0.999),
     )
 
@@ -184,6 +187,7 @@ def train_model(model, train_loader, val_loader, **kwargs):
         writer=writer,
         learning_rate=lr,
         num_epochs=num_epochs,
+        weight_decay=weight_decay,
     )
 
     state.log_model_config()
@@ -297,31 +301,14 @@ def main():
     num_classes = len(train_dataset.class_to_idx)
 
     model_configs = [
-        # {"type": "RNN", "hidden_size": 256, "num_layers": 1, "lr": 0.01},
-        # {"type": "RNN", "hidden_size": 512, "num_layers": 1, "lr": 0.01},
-        # {"type": "DeepRNN", "hidden_size": 256, "num_layers": 2, "lr": 0.01},
-        # {"type": "DeepRNN", "hidden_size": 256, "num_layers": 3, "lr": 0.01},
-        # {"type": "DeepRNN", "hidden_size": 512, "num_layers": 2, "lr": 0.01},
-        # {"type": "ESN", "reservoir_size": 2000, "lr": 0.01},
-        # {"type": "ESN", "reservoir_size": 2000, "lr": 0.05},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0001},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.0001},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0005},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.0005},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.001},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.001},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.005},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.005},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.01},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.01},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.05},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.05},
-        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.1},
-        {"type": "ESN", "reservoir_size": 5000, "lr": 0.1},
-        # {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.01},
-        # {"type": "DeepESN", "reservoir_size": 2000, "num_layers": 2, "lr": 0.05},
-        # {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.01},
-        # {"type": "DeepESN", "reservoir_size": 5000, "num_layers": 2, "lr": 0.05},
+        # Baseline repeat — best config from previous LR sweep
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0005, "num_epochs": 25, "weight_decay": 0.05},
+        # More epochs — does val acc keep climbing past epoch 25?
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0005, "num_epochs": 50, "weight_decay": 0.05},
+        # Higher weight decay — attack the train/val gap directly
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0005, "num_epochs": 25, "weight_decay": 0.1},
+        # Larger hidden readout — more capacity in the trainable layer
+        {"type": "ESNNonLinear", "reservoir_size": 5000, "lr": 0.0005, "num_epochs": 25, "weight_decay": 0.05, "hidden_readout_size": 512},
     ]
 
     results = {}
@@ -338,8 +325,9 @@ def main():
                 model,
                 train_loader,
                 val_loader,
-                num_epochs=25,
+                num_epochs=config.get("num_epochs", 25),
                 lr=config.get("lr", 0.01),
+                weight_decay=config.get("weight_decay", 0.05),
                 experiment_name=experiment_name,
             )
             results[model_name] = result
