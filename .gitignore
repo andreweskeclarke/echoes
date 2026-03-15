@@ -76,3 +76,4 @@ site/
 .runtime/
 .claude/
 .logs/
+.beads/
