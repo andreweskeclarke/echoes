@@ -1,0 +1,1 @@
+"""Data handling and storage abstractions for the echoes project."""

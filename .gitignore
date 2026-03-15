@@ -43,6 +43,9 @@ ENV/
 
 # Project specific
 data/
+# Track the data Python module (logging_config etc.) but not raw data files
+!data/__init__.py
+!data/logging_config.py
 *.log
 *.pth
 *.pt
@@ -77,3 +80,4 @@ site/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+.beads/
