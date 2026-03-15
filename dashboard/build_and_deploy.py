@@ -26,9 +26,10 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-NGINX_DASHBOARD_DIR = "/var/www/dashboard/current"
+NGINX_DASHBOARD_DIR = "/home/andrew/gt/echoes/dashboard/src"
 SOURCE_DIR = Path(__file__).parent / "src"
-EXPERIMENT_NAME = "UCF101_Architecture_Comparison"
+EXPERIMENT_NAME = "ESN_LocalRunner_Verification"
+MLFLOW_TRACKING_URI = "/mnt/echoes_data/mlruns"
 
 # Logging setup
 logging.basicConfig(
@@ -46,7 +47,17 @@ class ModelArchitectureAnalyzer:
 
     def analyze_model(self, run_data: dict[str, Any]) -> list[dict[str, Any]]:
         """Reconstruct model architecture from MLflow parameters"""
-        model_type = run_data.get("params.model_type", "Unknown")
+        model_type = (
+            run_data.get("params.model_type") or run_data.get("params.model", "Unknown")
+        )
+
+        # Use actual num_classes from run data if available
+        num_classes_raw = run_data.get("params.num_classes")
+        if num_classes_raw and str(num_classes_raw) != "nan":
+            try:
+                self.num_classes = int(num_classes_raw)
+            except (ValueError, TypeError):
+                pass
 
         if model_type == "SimpleRNN":
             return self._analyze_simple_rnn(run_data)
@@ -255,7 +266,7 @@ class PyTorchModelAnalyzer:
     """Analyzes saved PyTorch models to extract actual layer information"""
 
     def __init__(self):
-        self.mlruns_dir = Path("/home/aclarke/echoes/mlruns")
+        self.mlruns_dir = Path("/mnt/echoes_data/mlruns")
 
     def find_model_file(self, run_id: str) -> Path | None:
         """Find the PyTorch model file for a given run ID"""
@@ -462,6 +473,7 @@ class MLflowDashboardBuilder:
     def extract_mlflow_data(self) -> dict[str, Any]:
         """Extract experiment data from MLflow"""
         logger.info(f"Extracting MLflow data for experiment: {EXPERIMENT_NAME}")
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
         try:
             # Get experiment
@@ -505,26 +517,30 @@ class MLflowDashboardBuilder:
             logger.error(f"Failed to extract MLflow data: {e}")
             return {"experiments": [], "metadata": {"error": str(e)}}
 
+    @staticmethod
+    def _coerce_param_value(value: Any) -> int | float | str:
+        """Convert MLflow parameter string to int, float, or string."""
+        try:
+            return float(value) if "." in str(value) else int(value)
+        except (ValueError, TypeError):
+            return str(value)
+
     def _process_run(self, run: pd.Series) -> dict[str, Any] | None:
         """Process a single MLflow run"""
+        if run.get("status") == "FAILED":
+            return None
+
         run_name = run.get("tags.mlflow.runName", "Unknown")
-        model_type = run.get("params.model_type", "Unknown")
+        model_type = (
+            run.get("params.model_type") or run.get("params.model", "Unknown")
+        )
 
         # Extract parameters
-        params = {}
-        for col in run.index:
-            if col.startswith("params."):
-                param_name = col.replace("params.", "")
-                value = run[col]
-                if pd.notna(value):
-                    try:
-                        # Try to convert to number
-                        if "." in str(value):
-                            params[param_name] = float(value)
-                        else:
-                            params[param_name] = int(value)
-                    except (ValueError, TypeError):
-                        params[param_name] = str(value)
+        params = {
+            col.replace("params.", ""): self._coerce_param_value(run[col])
+            for col in run.index
+            if col.startswith("params.") and pd.notna(run[col])
+        }
 
         # Extract metrics
         metrics = {}
