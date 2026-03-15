@@ -1,5 +1,149 @@
 // MLflow Architecture Dashboard JavaScript
 
+// ─── Experiment Queue / Journal Panel ────────────────────────────────────
+
+class ExperimentQueue {
+    constructor() {
+        this.pollIntervalMs = 30000;
+        this.timer = null;
+        this.init();
+    }
+
+    async init() {
+        await this.refresh();
+        document.getElementById('queueRefreshBtn').addEventListener('click', () => this.refresh());
+        this.timer = setInterval(() => this.refresh(), this.pollIntervalMs);
+    }
+
+    async refresh() {
+        try {
+            const resp = await fetch('experiment_queue.json?t=' + Date.now());
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            this.render(data);
+        } catch (err) {
+            document.getElementById('experimentQueue').innerHTML =
+                `<div class="queue-error">Could not load experiment_queue.json — run <code>python dashboard/generate_queue_data.py</code> to generate it.</div>`;
+            document.getElementById('queueRefreshTime').textContent = '';
+        }
+    }
+
+    render(data) {
+        const container = document.getElementById('experimentQueue');
+        const refreshEl = document.getElementById('queueRefreshTime');
+
+        const genAt = new Date(data.generated_at);
+        refreshEl.textContent = `Updated ${this._relativeTime(genAt)}`;
+
+        if (!data.runs || data.runs.length === 0) {
+            container.innerHTML = '<div class="queue-empty">No experiments found.</div>';
+            return;
+        }
+
+        container.innerHTML = `
+            <table class="queue-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Model</th>
+                        <th>Goal / Run</th>
+                        <th>Val Acc</th>
+                        <th>Train Loss</th>
+                        <th>Time Used</th>
+                        <th>Experiment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.runs.map(r => this._row(r)).join('')}
+                </tbody>
+            </table>`;
+    }
+
+    _row(run) {
+        const statusClass = `status-${run.status}`;
+        const statusLabel = {
+            running: 'Running', pending: 'Pending', done: 'Done',
+            failed: 'Failed', killed: 'Killed', unknown: '?',
+        }[run.status] || run.status;
+
+        const modelType = run.model_type || 'Unknown';
+        const badgeClass = /ESN/i.test(modelType) ? 'esn' : /RNN|LSTM/i.test(modelType) ? 'rnn' : 'other';
+
+        const acc = run.val_accuracy != null
+            ? `<span class="metric-cell ${run.val_accuracy >= 50 ? 'good' : run.val_accuracy >= 10 ? 'mid' : ''}">${run.val_accuracy.toFixed(1)}%</span>`
+            : `<span class="metric-cell na">—</span>`;
+
+        const loss = run.train_loss != null
+            ? `<span class="metric-cell">${run.train_loss.toFixed(3)}</span>`
+            : `<span class="metric-cell na">—</span>`;
+
+        const timeCell = this._timeCell(run);
+
+        const expName = (run.experiment_name || '').replace(/UCF101_/g, '').replace(/_/g, ' ').trim();
+
+        return `
+            <tr class="${statusClass}">
+                <td>
+                    <span class="status-pill">
+                        <span class="status-dot"></span>
+                        ${statusLabel}
+                    </span>
+                </td>
+                <td><span class="model-type-badge ${badgeClass}">${modelType}</span></td>
+                <td>
+                    <div class="run-name">${this._esc(run.name)}</div>
+                    <div class="hypothesis-blurb" title="${this._esc(run.hypothesis)}">${this._esc(run.hypothesis)}</div>
+                </td>
+                <td>${acc}</td>
+                <td>${loss}</td>
+                <td>${timeCell}</td>
+                <td><span class="exp-name-cell" title="${this._esc(run.experiment_name)}">${this._esc(expName)}</span></td>
+            </tr>`;
+    }
+
+    _timeCell(run) {
+        if (run.status === 'running' && run.start_time_ms) {
+            const elapsed = (Date.now() - run.start_time_ms) / 1000;
+            return `<span class="time-cell running-elapsed">▶ ${this._fmtTime(elapsed)}</span>`;
+        }
+        if (run.training_time_seconds != null) {
+            return `<span class="time-cell">${this._fmtTime(run.training_time_seconds)}</span>`;
+        }
+        if (run.start_time_ms && run.end_time_ms) {
+            const t = (run.end_time_ms - run.start_time_ms) / 1000;
+            return `<span class="time-cell">${this._fmtTime(t)}</span>`;
+        }
+        return `<span class="time-cell na">—</span>`;
+    }
+
+    _fmtTime(seconds) {
+        if (seconds < 60) return `${Math.round(seconds)}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+        return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+    }
+
+    _relativeTime(date) {
+        const diffMs = Date.now() - date.getTime();
+        const diffSec = Math.round(diffMs / 1000);
+        if (diffSec < 10) return 'just now';
+        if (diffSec < 60) return `${diffSec}s ago`;
+        const diffMin = Math.round(diffSec / 60);
+        if (diffMin < 60) return `${diffMin}m ago`;
+        return date.toLocaleTimeString();
+    }
+
+    _esc(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+}
+
+
+
 class ArchitectureDashboard {
     constructor() {
         this.data = null;
@@ -578,6 +722,7 @@ class ArchitectureDashboard {
 
 // Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    window.experimentQueue = new ExperimentQueue();
     window.dashboard = new ArchitectureDashboard();
 });
 

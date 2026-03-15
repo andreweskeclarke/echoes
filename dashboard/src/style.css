@@ -1,5 +1,239 @@
 /* MLflow Architecture Dashboard - Charm.land Inspired Styles */
 
+/* ─── Experiment Journal / Queue Panel ──────────────────────────────────── */
+
+.experiment-queue-section {
+    margin-bottom: 32px;
+}
+
+.experiment-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    font-size: 1.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--charm-purple), var(--charm-blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.queue-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.queue-refresh-time {
+    color: var(--charm-text-light);
+    font-size: 0.8rem;
+}
+
+.refresh-btn {
+    background: none;
+    border: 2px solid var(--charm-border);
+    border-radius: 8px;
+    color: var(--charm-text-soft);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px 10px;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.refresh-btn:hover {
+    border-color: var(--charm-purple);
+    color: var(--charm-purple);
+    transform: rotate(30deg);
+}
+
+.experiment-queue {
+    background: var(--charm-surface);
+    border: 2px solid var(--charm-border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(155, 89, 182, 0.06);
+}
+
+.queue-loading {
+    padding: 32px;
+    text-align: center;
+    color: var(--charm-text-light);
+    font-size: 0.9rem;
+}
+
+.queue-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.queue-table thead tr {
+    background: linear-gradient(135deg, #f8f7ff 0%, #fdf9ff 100%);
+    border-bottom: 2px solid var(--charm-border);
+}
+
+.queue-table thead th {
+    padding: 14px 16px;
+    text-align: left;
+    color: var(--charm-text-soft);
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.queue-table tbody tr {
+    border-bottom: 1px solid var(--charm-border);
+    transition: background 0.15s ease;
+}
+
+.queue-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.queue-table tbody tr:hover {
+    background: rgba(155, 89, 182, 0.03);
+}
+
+.queue-table tbody tr.status-running {
+    background: rgba(0, 184, 148, 0.04);
+}
+
+.queue-table tbody tr.status-running:hover {
+    background: rgba(0, 184, 148, 0.08);
+}
+
+.queue-table td {
+    padding: 14px 16px;
+    vertical-align: middle;
+}
+
+/* Status pill */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-running .status-pill { background: rgba(0, 184, 148, 0.12); color: #00a884; }
+.status-running .status-dot  { background: #00b894; animation: pulse-dot 1.5s ease-in-out infinite; }
+.status-pending .status-pill  { background: rgba(116, 185, 255, 0.15); color: #0984e3; }
+.status-pending .status-dot   { background: #74b9ff; }
+.status-done .status-pill     { background: rgba(162, 155, 254, 0.15); color: #6c5ce7; }
+.status-done .status-dot      { background: #a29bfe; }
+.status-failed .status-pill   { background: rgba(255, 107, 157, 0.15); color: #e84393; }
+.status-failed .status-dot    { background: #ff6b9d; }
+.status-killed .status-pill   { background: rgba(178, 190, 195, 0.2); color: #636e72; }
+.status-killed .status-dot    { background: #b2bec3; }
+.status-unknown .status-pill  { background: rgba(178, 190, 195, 0.15); color: #b2bec3; }
+.status-unknown .status-dot   { background: #b2bec3; }
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(1.4); }
+}
+
+/* Model type badge */
+.model-type-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    background: linear-gradient(135deg, var(--charm-pink), var(--charm-purple));
+    color: white;
+    white-space: nowrap;
+}
+
+.model-type-badge.esn   { background: linear-gradient(135deg, #8b5cf6, #a29bfe); }
+.model-type-badge.rnn   { background: linear-gradient(135deg, #ef4444, #f97316); }
+.model-type-badge.other { background: linear-gradient(135deg, #6b7280, #9ca3af); }
+
+/* Hypothesis / goal blurb */
+.run-name {
+    font-weight: 600;
+    color: var(--charm-text);
+    margin-bottom: 3px;
+}
+
+.hypothesis-blurb {
+    color: var(--charm-text-soft);
+    font-size: 0.82rem;
+    font-style: italic;
+    max-width: 360px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Metric cells */
+.metric-cell {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.metric-cell.good { color: var(--charm-mint); }
+.metric-cell.mid  { color: var(--terminal-yellow); }
+.metric-cell.na   { color: var(--charm-text-light); font-weight: 400; font-style: italic; }
+
+/* Time cell */
+.time-cell {
+    color: var(--charm-text-soft);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.time-cell.running-elapsed {
+    color: var(--terminal-green);
+    font-weight: 600;
+}
+
+/* Experiment name (small) */
+.exp-name-cell {
+    color: var(--charm-text-light);
+    font-size: 0.78rem;
+    max-width: 160px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Queue empty / error states */
+.queue-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--charm-text-light);
+}
+
+.queue-error {
+    padding: 24px;
+    text-align: center;
+    color: #e84393;
+    font-size: 0.9rem;
+}
+
+
 :root {
     /* Charm.land inspired color palette */
     --charm-bg: #faf9fb;
