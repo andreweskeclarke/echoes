@@ -5,9 +5,9 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-User=aclarke
-WorkingDirectory=/home/aclarke/echoes
-ExecStart=/home/aclarke/miniconda/envs/echoes/bin/mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri /mnt/echoes_data/mlruns
+User=andrew
+WorkingDirectory=/home/andrew/echoes
+ExecStart=/home/andrew/anaconda3/envs/echoes/bin/mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri /mnt/echoes_data/mlruns
 Restart=always
 RestartSec=10
 StandardOutput=journal
